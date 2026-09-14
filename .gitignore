@@ -1,6 +1,7 @@
 # ---- 密钥与本地配置（绝不入库）----
 data/secrets.json
 data/config.json
+data/auth.json
 
 # ---- 运行数据 ----
 data/drama.db

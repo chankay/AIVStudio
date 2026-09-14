@@ -9,13 +9,14 @@ import os
 import time
 import uuid
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import providers
 import media as media_store
+import auth
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -27,6 +28,76 @@ MEDIA_ROOT = media_store.media_root()
 app.mount("/media", StaticFiles(directory=MEDIA_ROOT), name="media")
 # 前端静态资源（css/js 已从单文件拆分；页面本体由 / 路由返回）
 app.mount("/web", StaticFiles(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")), name="web")
+
+# ---------------- 登录鉴权（Cookie 会话；未配置账号前开放自助初始化） ----------------
+
+# 无需登录即可访问的路径前缀（静态资源 + 认证接口本身）
+PUBLIC_PREFIXES = ("/web/", "/media/", "/api/auth/")
+
+
+def _session_user(request: Request) -> str | None:
+    return auth.user_of(request.cookies.get(auth.SESSION_COOKIE))
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if path == "/login" or path.startswith(PUBLIC_PREFIXES):
+        return await call_next(request)
+    if not _session_user(request):
+        if path.startswith("/api/"):
+            return JSONResponse({"detail": "未登录"}, status_code=401)
+        # 页面请求（含 /）：直接带跳转目标重定向到登录页
+        return HTMLResponse("", status_code=302, headers={"Location": f"/login?next={path}"})
+    return await call_next(request)
+
+
+class AuthIn(BaseModel):
+    username: str
+    password: str
+
+
+@app.get("/api/auth/state")
+async def auth_state():
+    """前端判断：是否已有账号（决定显示登录还是初始化）。"""
+    return {"has_users": auth.has_users()}
+
+
+@app.post("/api/auth/setup")
+async def auth_setup(body: AuthIn):
+    """仅当系统里还没有任何账号时可用：创建第一个（管理员）账号。"""
+    if auth.has_users():
+        raise HTTPException(403, "已存在账号，请直接登录")
+    if not auth.create_user(body.username, body.password):
+        raise HTTPException(400, "创建失败：用户名为空或密码少于 6 位")
+    token = auth.new_session(body.username.strip())
+    resp = JSONResponse({"ok": True, "username": body.username.strip()})
+    resp.set_cookie(auth.SESSION_COOKIE, token, max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax")
+    return resp
+
+
+@app.post("/api/auth/login")
+async def auth_login(body: AuthIn):
+    if not auth.verify(body.username, body.password):
+        raise HTTPException(401, "用户名或密码错误")
+    token = auth.new_session(body.username.strip())
+    resp = JSONResponse({"ok": True, "username": body.username.strip()})
+    resp.set_cookie(auth.SESSION_COOKIE, token, max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax")
+    return resp
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(request: Request):
+    auth.drop_session(request.cookies.get(auth.SESSION_COOKIE))
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(auth.SESSION_COOKIE)
+    return resp
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page():
+    return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "login.html"))
+
 
 # ---------------- 数据层（SQLite，单文件库 data/drama.db） ----------------
 
