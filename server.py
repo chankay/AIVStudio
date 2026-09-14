@@ -25,6 +25,8 @@ app = FastAPI(title="AI Drama Pipeline")
 # 媒体静态服务：挂存储根整体（按项目分目录，URL 形如 /media/{pid}/frames/xxx.png）
 MEDIA_ROOT = media_store.media_root()
 app.mount("/media", StaticFiles(directory=MEDIA_ROOT), name="media")
+# 前端静态资源（css/js 已从单文件拆分；页面本体由 / 路由返回）
+app.mount("/web", StaticFiles(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")), name="web")
 
 # ---------------- 数据层（SQLite，单文件库 data/drama.db） ----------------
 
@@ -36,15 +38,77 @@ def _load_projects() -> dict:
     return store.load_projects()
 
 
+# ---------------- SSE 实时推送（事件广播：数据变更 -> 前端拉一次） ----------------
+
+import collections
+
+class SseHub:
+    """极简 SSE hub：版本号 + 每客户端队列。
+
+    数据变更只 bump 版本并入队轻量事件（不含数据本身），前端收到后调一次
+    现有的 /api/projects 做差分渲染——省流且复用已有渲染逻辑。
+    """
+    def __init__(self):
+        self.version = 0
+        self._subs: dict[int, asyncio.Queue] = {}
+        self._n = 0
+
+    def publish(self, what: str = "update"):
+        self.version += 1
+        evt = {"v": self.version, "what": what, "ts": time.time()}
+        for q in list(self._subs.values()):
+            try:
+                q.put_nowait(evt)
+            except Exception:
+                pass
+
+    async def subscribe(self):
+        self._n += 1
+        q: asyncio.Queue = asyncio.Queue(maxsize=32)
+        self._subs[self._n] = q
+        try:
+            # 先发一个当前版本，前端立即对齐
+            yield f"data: {json.dumps({'v': self.version, 'what': 'hello'})}\n\n"
+            while True:
+                evt = await q.get()
+                yield f"data: {json.dumps(evt)}\n\n"
+        except asyncio.CancelledError:
+            raise
+        finally:
+            self._subs.pop(self._n, None)
+
+    @property
+    def n_clients(self) -> int:
+        return len(self._subs)
+
+sse_hub = SseHub()
+
+
+@app.get("/api/events")
+async def sse_events():
+    """SSE 端点。事件格式 data: {"v": 版本号, "what": "update"}。"""
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        sse_hub.subscribe(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 def _save_projects(data: dict):
     """保存一个或多个项目；传整表 dict 时逐个 upsert（各自独立行，互不覆盖）。"""
+    changed = False
     for proj in data.values():
         store.save_project(proj)
+        changed = True
+    if changed:
+        sse_hub.publish("update")
 
 
 def _save_one(proj: dict):
     """只保存单个被修改的项目（内部流水线任务推荐用这个，减少全表写放大）。"""
     store.save_project(proj)
+    sse_hub.publish("update")
 
 
 class ProjectIn(BaseModel):
@@ -91,6 +155,7 @@ async def delete_project(pid: str):
     proj = projects.pop(pid)
     freed = media_store.delete_project_media(pid)   # 目录整体删除 + 资产表清理
     store.delete_project(pid)
+    sse_hub.publish("delete")
     return {"msg": f"已删除项目 {proj['title']}，释放 {freed // 1024 // 1024}MB 媒体空间"}
 
 
@@ -114,6 +179,7 @@ async def update_dialogue(sid: str, body: DialogueIn):
                     shot["audio"] = ""
                     shot["audio_path"] = ""
                 store.save_project(proj)
+                sse_hub.publish("update")
                 return {"msg": f"台词已更新：{sid}"}
     raise HTTPException(404)
 
@@ -284,6 +350,7 @@ def _enqueue(pid: str, kind: str, stage: str, payload: dict | None = None) -> st
     """创建任务记录并启动执行。kind: design/frames/videos/tts/all。"""
     tid = uuid.uuid4().hex[:8]
     store.create_task(tid, pid, kind, stage, payload)
+    sse_hub.publish("task")
     asyncio.create_task(_task_runner(tid, pid, stage))
     return tid
 
@@ -301,6 +368,7 @@ async def _task_runner(tid: str, pid: str, stage: str):
         else:
             await _pipeline(pid, stage, tid=tid)
         store.finish_task(tid, "done")
+        sse_hub.publish("task")
     except asyncio.CancelledError:
         store.finish_task(tid, "canceled")
         raise
