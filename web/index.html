@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 网剧流水线</title>
+<style>
+  :root {
+    --bg: #0c0d10;
+    --panel: #16181d;
+    --panel-2: #1c1f26;
+    --line: #2a2e37;
+    --txt: #e8eaf0;
+    --txt-2: #9aa0ae;
+    --txt-3: #626875;
+    --accent: #6d8bff;
+    --accent-2: #8b5cf6;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --radius: 14px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body {
+    font-family: -apple-system, "PingFang SC", sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(109,139,255,.10), transparent 60%),
+      radial-gradient(900px 500px at -10% 30%, rgba(139,92,246,.07), transparent 60%),
+      var(--bg);
+    color: var(--txt);
+    padding: 32px 24px 80px;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 {
+    font-size: 22px; font-weight: 600; letter-spacing: .5px;
+    background: linear-gradient(90deg, #fff, #b9c2ff);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .sub { font-size: 13px; color: var(--txt-3); margin: 6px 0 14px; }
+  .health { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+  .chip {
+    font-size: 12px; padding: 4px 12px; border-radius: 99px;
+    background: var(--panel); border: 1px solid var(--line); color: var(--txt-2);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .chip.down i { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .chip.down { color: var(--red); }
+
+  .card {
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px; margin-bottom: 18px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.35);
+  }
+  label { display: block; font-size: 12px; color: var(--txt-2); margin: 14px 0 6px; letter-spacing: .5px; }
+  input, textarea {
+    width: 100%; background: #0f1115; border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; font-size: 14px; color: var(--txt); font-family: inherit;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(109,139,255,.15); }
+  textarea { height: 72px; resize: vertical; }
+  button {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff; border: none; border-radius: 10px; padding: 10px 22px; font-size: 14px; font-weight: 500;
+    cursor: pointer; margin-top: 14px; transition: filter .15s, transform .05s;
+  }
+  button:hover { filter: brightness(1.12); }
+  button:active { transform: scale(.98); }
+  button:disabled { background: var(--line); color: var(--txt-3); cursor: not-allowed; filter: none; }
+  button.ghost {
+    background: transparent; color: var(--txt-2); border: 1px solid var(--line);
+    padding: 5px 12px; font-size: 12px; margin-top: 0; font-weight: 400;
+  }
+  button.ghost:hover { color: var(--txt); border-color: var(--txt-3); filter: none; }
+
+  .proj { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .proj strong { font-size: 16px; font-weight: 600; }
+  .proj .meta { font-size: 12px; color: var(--txt-3); line-height: 1.7; }
+  .status {
+    font-size: 12px; padding: 3px 12px; border-radius: 99px; margin-left: 8px;
+    background: rgba(109,139,255,.12); color: var(--accent); border: 1px solid rgba(109,139,255,.25);
+    vertical-align: 2px;
+  }
+  .status.running, .status.dubbing { background: rgba(251,191,36,.1); color: var(--amber); border-color: rgba(251,191,36,.25); }
+  .status.done, .status.frames_ready { background: rgba(52,211,153,.1); color: var(--green); border-color: rgba(52,211,153,.25); }
+  .status.error { background: rgba(248,113,113,.1); color: var(--red); border-color: rgba(248,113,113,.3); }
+  .log {
+    font-size: 12px; color: var(--txt-3); font-family: ui-monospace, "SF Mono", monospace;
+    margin-top: 14px; line-height: 1.9; padding: 10px 14px;
+    background: #0f1115; border-radius: 10px; border: 1px solid var(--line);
+  }
+  .banner {
+    margin-top: 14px; padding: 12px 16px; border-radius: 10px; font-size: 13px;
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  }
+  .banner.ok { background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.2); }
+  .banner.bad { background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.2); }
+  .banner.info { background: rgba(109,139,255,.08); border: 1px solid rgba(109,139,255,.2); }
+
+  .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; margin-top: 16px; }
+  .shot {
+    background: #101216; border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    display: flex; flex-direction: column; transition: border-color .15s, transform .15s;
+  }
+  .shot:hover { border-color: #3a4050; transform: translateY(-2px); }
+  .shot .media { position: relative; width: 100%; aspect-ratio: 16/9; background: #0a0b0d; cursor: zoom-in; }
+  .shot .media img, .shot .media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .shot .media .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--txt-3); }
+  .shot .pbar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.08); }
+  .shot .pbar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 3s linear; box-shadow: 0 0 8px rgba(109,139,255,.6); }
+  .shot .info { padding: 10px 12px 12px; font-size: 12px; line-height: 1.65; flex: 1; }
+  .shot .info .sid { font-weight: 600; display: flex; justify-content: space-between; align-items: center; color: var(--txt); }
+  .shot .info .desc { color: var(--txt-2); margin: 4px 0; }
+  .shot .info .dlg { color: var(--accent); font-style: italic; }
+  .shot .ops { display: flex; gap: 6px; padding: 0 12px 12px; flex-wrap: wrap; }
+  .badge { font-size: 11px; padding: 1px 9px; border-radius: 99px; white-space: nowrap; font-weight: 400; }
+  .b-done { background: rgba(52,211,153,.12); color: var(--green); }
+  .b-run  { background: rgba(251,191,36,.12); color: var(--amber); }
+  .b-fail { background: rgba(248,113,113,.12); color: var(--red); }
+  .b-pend { background: rgba(255,255,255,.06); color: var(--txt-3); }
+
+  .final-box video { border-radius: 10px; width: 100%; max-width: 660px; }
+  .final-box a { color: var(--accent); text-decoration: none; font-size: 13px; }
+  .final-box a:hover { text-decoration: underline; }
+
+  .chars { display: flex; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
+  .char {
+    background: #101216; border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    width: 180px; transition: border-color .15s;
+  }
+  .char:hover { border-color: #3a4050; }
+  .char .media { position: relative; width: 100%; aspect-ratio: 9/14; background: #0a0b0d; cursor: zoom-in; }
+  .char .media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .char .media .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--txt-3); }
+  .char .info { padding: 8px 10px 10px; font-size: 12px; }
+  .char .info .name { font-weight: 600; }
+  .char .info .app { color: var(--txt-2); font-size: 11px; margin-top: 3px; line-height: 1.5; }
+  .char .ops { display: flex; gap: 6px; padding: 0 10px 10px; }
+
+  #viewer {
+    position: fixed; inset: 0; background: rgba(5,6,8,.9); backdrop-filter: blur(8px);
+    display: none; align-items: center; justify-content: center; z-index: 99; cursor: zoom-out;
+  }
+  #viewer.on { display: flex; }
+  #viewer img, #viewer video { max-width: 92vw; max-height: 88vh; border-radius: 12px; background: #000; box-shadow: 0 20px 80px rgba(0,0,0,.6); }
+
+  #toasts { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .toast {
+    background: rgba(28,31,38,.95); border: 1px solid var(--line); color: var(--txt);
+    font-size: 13px; padding: 10px 20px; border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5); animation: tin .25s ease; max-width: 80vw;
+  }
+  .toast.err { border-color: rgba(248,113,113,.4); color: var(--red); }
+  @keyframes tin { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  #configModal { position: fixed; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
+    display: none; align-items: flex-start; justify-content: center; z-index: 200; overflow-y: auto; padding: 6vh 16px; }
+  #configModal.on { display: flex; }
+  .config-box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px 22px; width: 560px; max-width: 96vw; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+  .cfg-group { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
+  .cfg-group .cfg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .cfg-group .cfg-head b { font-size: 13px; }
+  .cfg-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--txt-3); display: inline-block; margin-right: 6px; }
+  .cfg-dot.up { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .cfg-dot.down { background: var(--red); }
+  .cfg-grid { display: grid; grid-template-columns: 64px 1fr; gap: 6px 10px; align-items: center; }
+  .cfg-grid label { margin: 0; font-size: 11px; }
+  .cfg-grid input { padding: 7px 10px; font-size: 12px; }
+  .cfg-key-wrap { display: flex; gap: 6px; align-items: center; }
+  .cfg-key-wrap input { flex: 1; }
+  .cfg-key-mask { font-size: 11px; color: var(--txt-3); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+    <h1>AI 网剧流水线</h1>
+    <button class="ghost" style="margin-top:4px;" onclick="openConfig()">⚙ 模型后端配置</button>
+  </div>
+  <div class="sub" id="modeTag">…</div>
+  <div class="health" id="health"></div>
+
+  <div class="card">
+    <label>剧名</label>
+    <input id="title" placeholder="例：城中村理发店">
+    <label>一句话创意</label>
+    <textarea id="idea" placeholder="例：一个失业程序员接手了父亲的理发店，在形形色色的客人身上重新理解生活"></textarea>
+    <div style="display:flex; gap:16px;">
+      <div style="flex:1;"><label>镜头数</label><input id="nshots" type="number" value="6" min="3" max="12"></div>
+      <div style="flex:2;"><label>画风</label><input id="style" value="写实电影感"></div>
+    </div>
+    <button id="btnCreate" onclick="createAndRun()">生成分镜并开跑</button>
+    <span id="createMsg" style="font-size:12px;color:var(--txt-3);margin-left:10px;"></span>
+  </div>
+
+  <div id="projects"></div>
+</div>
+
+<div id="viewer" onclick="this.classList.remove('on')"></div>
+<div id="configModal" onclick="if(event.target===this)this.classList.remove('on')">
+  <div class="config-box">
+    <h3 style="margin:0 0 4px;font-size:16px;">模型后端配置</h3>
+    <div style="font-size:12px;color:var(--txt-3);margin-bottom:10px;">修改后立即生效（无需重启服务）。Key 留空表示不修改。</div>
+    <div id="configBody"></div>
+    <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;">
+      <button class="ghost" onclick="testAllBackends()" id="btnTestCfg">测试连通性</button>
+      <button class="ghost" onclick="document.getElementById('configModal').classList.remove('on')">取消</button>
+      <button style="margin-top:0;" onclick="saveConfig()">保存</button>
+    </div>
+  </div>
+</div>
+<div id="toasts"></div>
+
+<script>
+const MODE_NOTE = {
+  mock: '当前为 mock 模式（无 GPU 演示，含模拟抽卡失败）',
+  real: '当前为 real 模式（对接真实生成服务）'
+};
+const PROJ_STATUS = {
+  created: '已创建', running: '生成中', design_ready: '待确认定妆',
+  frames_ready: '待确认首帧', done: '已完成', error: '出错',
+  dubbing: '配音合成中', tts_running: '配音合成中'
+};
+function shotStatusText(st) {
+  st = String(st);
+  if (st === 'done') return '完成';
+  if (st === 'pending') return '待视频';
+  if (st === 'generating_frame') return '首帧生成中';
+  if (st === 'frame_failed') return '首帧失败';
+  if (st === 'generating_video') return '视频生成中';
+  if (st === 'failed') return '失败';
+  if (st.startsWith('retry') || st.startsWith('regen')) return '重抽中';
+  return st;
+}
+
+function toast(msg, err) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (err ? ' err' : '');
+  t.textContent = msg;
+  document.getElementById('toasts').appendChild(t);
+  setTimeout(() => t.remove(), err ? 5000 : 3000);
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts ? {headers:{'Content-Type':'application/json'}, ...opts} : undefined);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function createAndRun() {
+  const title = document.getElementById('title').value.trim();
+  const idea = document.getElementById('idea').value.trim();
+  if (!title || !idea) { toast('剧名和创意都要填', true); return; }
+  const btn = document.getElementById('btnCreate');
+  btn.disabled = true;
+  try {
+    const p = await api('/api/projects', {method:'POST', body: JSON.stringify({
+      title, idea,
+      n_shots: parseInt(document.getElementById('nshots').value) || 6,
+      style: document.getElementById('style').value || '写实电影感'
+    })});
+    // v2 流程：先只跑「分镜 + 角色定妆」，确认角色形象后再进首帧 → 视频
+    await api(`/api/projects/${p.id}/run?stage=design`, {method:'POST'});
+    document.getElementById('title').value = '';
+    document.getElementById('idea').value = '';
+    await refresh();
+    const el = document.getElementById('proj-' + p.id);
+    if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+  } catch (e) {
+    toast('创建失败：' + e.message, true);
+  } finally { btn.disabled = false; }
+}
+
+// ---------- 渲染（按项目差分更新；媒体节点跨刷新复用，避免视频/图片被重置） ----------
+let lastSnap = {};        // pid -> 上次渲染的数据签名
+const voiceDrafts = {};   // pid -> 音色输入框草稿（重渲染后回填）
+let modeNote = '';        // 后端健康说明（由 /api/mode 维护，refresh 不覆盖）
+
+async function refresh() {
+  let projects;
+  try { projects = await api('/api/projects'); } catch { return; }
+  document.getElementById('modeTag').textContent = MODE_NOTE[window.__mode || 'mock'];
+  const container = document.getElementById('projects');
+  const pids = new Set();
+
+  for (const p of projects) {
+    pids.add(p.id);
+    const sig = JSON.stringify(p);
+    const card = document.getElementById('proj-' + p.id);
+    // 数据没变就完全不动这个项目的 DOM（输入框、正在看的视频都不受打扰）
+    if (card && lastSnap[p.id] === sig) continue;
+    lastSnap[p.id] = sig;
+
+    // 收集现有媒体节点（按 镜头id+类型+src 匹配），重绘后原样移回来——播放进度、缓冲都保留
+    const keeps = {};
+    if (card) card.querySelectorAll('.shot').forEach(el => {
+      const m = el.querySelector('.media img, .media video');
+      if (m) keeps[el.dataset.sid + '|' + m.tagName + '|' + (m.getAttribute('src') || '')] = m;
+    });
+
+    if (!card) {
+      const nc = document.createElement('div');
+      nc.id = 'proj-' + p.id; nc.className = 'card'; nc.dataset.pid = p.id;
+      container.appendChild(nc);
+    }
+    document.getElementById('proj-' + p.id).innerHTML = buildCard(p);
+
+    // 把保留的媒体节点移回对应镜头
+    const fresh = document.getElementById('proj-' + p.id);
+    fresh.querySelectorAll('.shot').forEach(el => {
+      const m = el.querySelector('.media img, .media video');
+      if (!m) return;
+      const k = el.dataset.sid + '|' + m.tagName + '|' + (m.getAttribute('src') || '');
+      if (keeps[k]) m.replaceWith(keeps[k]);
+    });
+    // 回填音色草稿
+    const inp = fresh.querySelector('.voice-input');
+    if (inp && voiceDrafts[p.id] !== undefined) inp.value = voiceDrafts[p.id];
+  }
+  // 清掉已删除项目的 DOM
+  container.querySelectorAll('.card[data-pid]').forEach(c => {
+    if (!pids.has(c.dataset.pid)) { delete lastSnap[c.dataset.pid]; c.remove(); }
+  });
+}
+
+function fmtSec(s) {
+  return s >= 3600 ? `${Math.floor(s/3600)}h${Math.round(s%3600/60)}m`
+       : s >= 60 ? `${Math.floor(s/60)}m${Math.round(s%60)}s` : `${s}s`;
+}
+
+function buildCard(p) {
+  const doneN = (p.shots || []).filter(s => s.video_status === 'done').length;
+  const total = (p.shots || []).length;
+  const elapsed = p.status === 'running' || p.status === 'dubbing'
+    ? Math.round(Date.now() / 1000 - p.pipeline_started_at)
+    : (p.elapsed_total || 0);
+  return `
+    <div class="proj">
+      <div>
+        <strong>${p.title}</strong>
+        <span class="status ${p.status}">${PROJ_STATUS[p.status] || p.status}</span>
+        ${total ? `<div class="meta" style="margin-top:4px">${doneN}/${total} 成片 · 耗时 ${fmtSec(elapsed)}${p.status === 'running' || p.status === 'dubbing' ? '（计时中）' : ''}</div>` : ''}
+        <div class="meta">创意：${p.idea}　·　画风：${p.style}　·　${p.created_at}</div>
+      </div>
+      <button class="ghost" style="color:var(--red);border-color:rgba(248,113,113,.3);" onclick="delProject('${p.id}', '${p.title.replace(/'/g, '')}')">删除</button>
+    </div>
+    ${p.log && p.log.length ? `<div class="log">${p.log.slice(-6).join('<br>')}</div>` : ''}
+    ${(p.characters || []).length ? `<div style="margin-top:16px;font-size:13px;font-weight:600">🧑‍🎭 角色档案</div>
+    <div class="chars">
+      ${p.characters.map(c => `<div class="char" data-cname="${c.name}">
+        <div class="media" onclick="openViewer('${c.design_url || ''}','image')">
+          ${c.design_url ? `<img src="${c.design_url}" loading="lazy">` : `<div class="ph">定妆生成中…</div>`}
+        </div>
+        <div class="info">
+          <div class="name">${c.name}</div>
+          <div class="app">${c.appearance || ''}</div>
+        </div>
+        <div class="ops">${c.design_url ? `<button class="ghost" onclick="regenChar('${p.id}','${c.name.replace(/'/g, '')}')">换定妆</button>` : ''}</div>
+      </div>`).join('')}
+    </div>` : ''}
+    ${p.status === 'design_ready' && (p.characters || []).some(c => c.design_url) ? `<div class="banner ok">
+      <span>✅ 角色定妆已出，检查形象是否满意（此时重抽只花几秒，确认后才开始烧首帧）</span>
+      <button style="margin-top:0;white-space:nowrap;" onclick="runFrames('${p.id}')">确认定妆，生成首帧</button>
+    </div>` : ''}
+    ${p.status === 'design_ready' && !(p.characters || []).some(c => c.design_url) ? `<div class="banner bad">
+      <span>❌ 定妆全部失败，查看日志排查后重试</span>
+      <button style="margin-top:0;background:linear-gradient(135deg,#f87171,#dc2626);" onclick="retryDesign('${p.id}')">重试定妆</button>
+    </div>` : ''}
+    ${p.status === 'frames_ready' && (p.shots || []).some(s => s.frame_url) ? `<div class="banner ok">
+      <span>✅ 首帧已出完，检查画面和人物形象，满意后开跑视频（视频生成慢，确认后再跑）</span>
+      <button style="margin-top:0;white-space:nowrap;" onclick="runVideos('${p.id}')">开始生成视频</button>
+    </div>` : ''}
+    ${p.status === 'done' && (p.shots || []).some(s => s.video_url) ? `<div class="banner info">
+      <input class="voice-input" placeholder="音色描述（如：年轻男性，声音低沉温暖），留空用默认" style="flex:1;padding:8px 12px;font-size:13px;" oninput="voiceDrafts['${p.id}']=this.value">
+      <button style="margin-top:0;white-space:nowrap;" onclick="genTts('${p.id}')">${p.final_url ? '重新配音+合成正片' : '生成配音+合成正片'}</button>
+    </div>` : ''}
+    ${p.final_url ? `<div class="banner final-box" style="display:block;">
+      <div style="margin-bottom:8px;font-weight:600">🎬 正片<span style="font-weight:400;color:var(--txt-3);font-size:12px;margin-left:8px">含配音，按镜头顺序拼接</span></div>
+      <video src="${p.final_url}" controls></video>
+      <div style="margin-top:8px"><a href="${p.final_url}" download="${p.title}.mp4">下载正片 ↓</a></div>
+    </div>` : ''}
+    ${p.status === 'frames_ready' && !(p.shots || []).some(s => s.frame_url) ? `<div class="banner bad">
+      <span>❌ 首帧全部失败（0/${(p.shots || []).length}），查看日志排查后重试</span>
+      <button style="margin-top:0;background:linear-gradient(135deg,#f87171,#dc2626);" onclick="retryFrames('${p.id}')">重试首帧</button>
+    </div>` : ''}
+    ${p.char_ref && p.shots && p.shots.some(s => s.char_unified) ? `<div class="meta" style="margin-top:8px">🧑 角色参考图：第一张成功首帧，其余镜头已经 Edit 模型统一人物形象</div>` : ''}
+    ${p.shots && p.shots.length ? `<div class="shots">
+      ${p.shots.map(s => {
+        const vid = s.video_status === 'done' && s.video_url;
+        const showBar = ['generating_video', 'generating_frame', 'pending'].includes(s.video_status) || String(s.video_status).startsWith('retry') || String(s.video_status).startsWith('regen');
+        const pct = s.video_status === 'generating_video' ? (s.progress || 0) : showBar ? 0 : null;
+        const metaBits = [s.camera, `${s.duration}s`];
+        if (s.attempts) metaBits.push(`抽卡${s.attempts}次`);
+        if (s.frame_elapsed) metaBits.push(`首帧${fmtSec(s.frame_elapsed)}`);
+        if (s.video_elapsed) metaBits.push(`视频${fmtSec(s.video_elapsed)}`);
+        if (s.elapsed && s.video_status !== 'done') metaBits.push(`已进行${fmtSec(s.elapsed)}`);
+        return `<div class="shot" data-sid="${s.shot_id}">
+          <div class="media" onclick="openViewer('${vid ? s.video_url : (s.frame_url || '')}', ${vid ? "'video'" : "'image'"})">
+            ${vid
+              ? `<video src="${s.video_url}" muted loop preload="metadata" onmouseover="this.play()" onmouseout="this.pause()"></video>`
+              : s.frame_url
+                ? `<img src="${s.frame_url}" loading="lazy">`
+                : `<div class="ph">${phText(s)}</div>`}
+            ${showBar && s.video_status !== 'pending' ? `<div class="pbar"><div style="width:${pct || (s.video_status === 'generating_frame' ? 5 : 15)}%"></div></div>` : ''}
+          </div>
+          <div class="info">
+            <div class="sid">${s.shot_id} <span class="badge ${badgeCls(s.video_status)}">${s.video_status === 'generating_video' ? `生成中 ${pct || 0}%` : shotStatusText(s.video_status)}</span></div>
+            <div class="desc">${s.description}</div>
+            ${s.dialogue ? `<div class="dlg">「${s.dialogue}」</div>` : ''}
+            <div style="color:var(--txt-3)">${metaBits.join(' · ')}</div>
+          </div>
+          <div class="ops">
+            ${s.frame_url ? `<button class="ghost" onclick="openViewer('${s.frame_url}','image')">看首帧</button>` : ''}
+            ${s.frame_url && !vid ? `<button class="ghost" onclick="regenFrame('${s.shot_id}')">换首帧</button>` : ''}
+            ${!s.frame_url && String(s.video_status).startsWith('frame') ? `<button class="ghost" onclick="regenFrame('${s.shot_id}')">重试首帧</button>` : ''}
+            ${vid || s.video_status === 'failed' ? `<button class="ghost" onclick="regen('${s.shot_id}')">重抽视频</button>` : ''}
+            ${vid && !p.final_url ? `<button class="ghost" onclick="editDialogue('${s.shot_id}', '${(s.dialogue || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ')}')">改台词</button>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : ''}`;
+}
+
+function phText(s) {
+  const st = String(s.video_status);
+  if (st === 'pending') return s.frame_url ? '首帧已确认，待视频' : '排队中';
+  if (st.startsWith('frame')) return '首帧生成失败';
+  if (st === 'failed') return '生成失败';
+  if (st.startsWith('generating') || st.startsWith('retry') || st.startsWith('regen')) return '生成中…';
+  return 'mock 模拟（无真实媒体）';
+}
+
+function openViewer(url, type) {
+  if (!url) return;
+  const v = document.getElementById('viewer');
+  v.innerHTML = type === 'video' ? `<video src="${url}" controls autoplay loop></video>` : `<img src="${url}">`;
+  v.classList.add('on');
+}
+
+function badgeCls(st) {
+  if (st === 'done') return 'b-done';
+  if (st === 'failed' || st === 'frame_failed') return 'b-fail';
+  if (st === 'pending') return 'b-pend';
+  return 'b-run';
+}
+
+async function regen(sid) {
+  try {
+    await api(`/api/shots/${sid}/regenerate?mode=video`, {method:'POST'});
+    toast('镜头 ' + sid + ' 视频重抽中');
+  } catch (e) { toast('重抽失败：' + e.message, true); }
+  refresh();
+}
+
+async function regenFrame(sid) {
+  try {
+    await api(`/api/shots/${sid}/regenerate?mode=frame`, {method:'POST'});
+    toast('镜头 ' + sid + ' 首帧重抽中');
+  } catch (e) { toast('重抽失败：' + e.message, true); }
+  refresh();
+}
+
+async function editDialogue(sid, cur) {
+  const d = prompt('编辑台词（配音前可随时改，留空则删除台词）：', cur || '');
+  if (d === null) return;   // 取消
+  try {
+    await api(`/api/shots/${sid}/dialogue`, {method:'POST', body: JSON.stringify({dialogue: d.trim()})});
+    toast('台词已更新');
+  } catch (e) { toast('台词更新失败：' + e.message, true); }
+  refresh();
+}
+
+async function runFrames(pid) {
+  try {
+    await api(`/api/projects/${pid}/run_frames`, {method:'POST'});
+    toast('定妆已确认，首帧生成中');
+  } catch (e) { toast('启动失败：' + e.message, true); }
+  refresh();
+}
+
+async function retryDesign(pid) {
+  try {
+    await api(`/api/projects/${pid}/run?stage=design`, {method:'POST'});
+    toast('定妆重试中');
+  } catch (e) { toast('重试失败：' + e.message, true); }
+  refresh();
+}
+
+async function regenChar(pid, name) {
+  try {
+    await api(`/api/characters/${pid}/regenerate`, {method:'POST', body: JSON.stringify({name})});
+    toast('角色「' + name + '」定妆重抽中');
+  } catch (e) { toast('重抽失败：' + e.message, true); }
+  refresh();
+}
+
+async function runVideos(pid) {
+  if (!confirm('确认首帧都满意？视频阶段每条要跑较久')) return;
+  try {
+    await api(`/api/projects/${pid}/run_videos`, {method:'POST'});
+    toast('视频阶段已启动');
+  } catch (e) { toast('启动失败：' + e.message, true); }
+  refresh();
+}
+
+async function retryFrames(pid) {
+  try {
+    await api(`/api/projects/${pid}/run?stage=frames`, {method:'POST'});
+    toast('首帧重试中');
+  } catch (e) { toast('重试失败：' + e.message, true); }
+  refresh();
+}
+
+async function genTts(pid) {
+  const inp = document.querySelector(`#proj-${pid} .voice-input`);
+  const body = { voice_desc: inp ? inp.value.trim() : '' };
+  try {
+    await api(`/api/projects/${pid}/tts`, {method:'POST', body: JSON.stringify(body)});
+    toast('配音+合成已启动');
+  } catch (e) { toast('启动失败：' + e.message, true); }
+  refresh();
+}
+
+async function delProject(pid, title) {
+  if (!confirm(`删除项目「${title}」？其首帧和视频文件一并清除，不可恢复`)) return;
+  try {
+    const r = await api(`/api/projects/${pid}`, {method:'DELETE'});
+    toast(r.msg || '已删除');
+  } catch (e) {
+    toast('删除失败：' + e.message, true);
+  }
+  refresh();
+}
+
+// ---------------- 模型后端配置面板 ----------------
+const CFG_LABELS = {
+  llm: '剧本分镜（LLM）', image: '文生图（首帧/定妆）', edit: '图生图（角色一致性）',
+  video: '图生视频（I2V）', tts: '语音合成（TTS）'
+};
+
+async function openConfig() {
+  document.getElementById('configModal').classList.add('on');
+  await renderConfig();
+}
+
+async function renderConfig(testState) {
+  let cfg;
+  try { cfg = await api('/api/config'); } catch (e) { toast('读取配置失败：' + e.message, true); return; }
+  const body = document.getElementById('configBody');
+  body.innerHTML = Object.entries(CFG_LABELS).map(([g, label]) => {
+    const c = cfg[g] || {};
+    const dot = testState && testState[g] !== undefined
+      ? `<span class="cfg-dot ${testState[g].ok ? 'up' : 'down'}" title="${testState[g].ok ? '连通' : (testState[g].error || '不可达')}"></span>`
+      : '';
+    return `<div class="cfg-group">
+      <div class="cfg-head"><b>${dot}${label}</b></div>
+      <div class="cfg-grid">
+        <label>服务地址</label><input id="cfg-${g}-url" value="${(c.url || '').replace(/"/g, '&quot;')}" placeholder="http://host:port">
+        <label>模型名</label><input id="cfg-${g}-model" value="${(c.model || '').replace(/"/g, '&quot;')}" placeholder="模型名称">
+        <label>API Key</label>
+        <div class="cfg-key-wrap">
+          <input id="cfg-${g}-key" type="password" placeholder="${c.key_set ? '已设置，留空不修改' : '未设置'}">
+          <span class="cfg-key-mask">${c.key_mask || ''}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function saveConfig() {
+  const data = {};
+  for (const g of Object.keys(CFG_LABELS)) {
+    data[g] = {
+      url: document.getElementById(`cfg-${g}-url`).value.trim(),
+      model: document.getElementById(`cfg-${g}-model`).value.trim(),
+      key: document.getElementById(`cfg-${g}-key`).value.trim(),  // 空 = 不修改
+    };
+  }
+  try {
+    await api('/api/config', { method: 'PUT', body: JSON.stringify(data) });
+    toast('配置已保存并生效');
+    document.getElementById('configModal').classList.remove('on');
+    initHealth();  // 立刻按新配置刷新健康状态
+  } catch (e) { toast('保存失败：' + e.message, true); }
+}
+
+async function testAllBackends() {
+  const btn = document.getElementById('btnTestCfg');
+  btn.disabled = true; btn.textContent = '测试中…';
+  const state = {};
+  await Promise.all(Object.keys(CFG_LABELS).map(async g => {
+    // 先把当前输入框的值临时保存再测（不保存 key 为空时的语义冲突：测试用已存配置）
+    try {
+      const r = await api('/api/config/test', { method: 'POST', body: JSON.stringify({ group: g }) });
+      state[g] = r;
+    } catch (e) { state[g] = { ok: false, error: e.message }; }
+  }));
+  btn.disabled = false; btn.textContent = '测试连通性';
+  await renderConfig(state);
+  const nOk = Object.values(state).filter(s => s.ok).length;
+  toast(`连通性测试：${nOk}/${Object.keys(CFG_LABELS).length} 个后端正常`, nOk < Object.keys(CFG_LABELS).length);
+}
+
+// 初始化：拉模式与健康状态
+async function initHealth() {
+  try {
+    const m = await api('/api/mode');
+    window.__mode = m.mode;
+    modeNote = m.note || '';
+    document.getElementById('modeTag').textContent = MODE_NOTE[m.mode] + (modeNote && modeNote !== '后端已配置' ? `（${modeNote}）` : '');
+    const h = document.getElementById('health');
+    h.innerHTML = [
+      ['分镜 LLM', m.llm_up], ['文生图', m.image_up], ['图生视频', m.wan_up],
+      ['图生图', m.edit_up], ['语音合成', m.tts_up]
+    ].map(([name, up]) => `<span class="chip ${up ? 'up' : 'down'}"><i></i>${name}${up ? '' : ' 不可达'}</span>`).join('');
+  } catch (e) {
+    document.getElementById('health').innerHTML = '<span class="chip down"><i></i>后端状态未知</span>';
+  }
+}
+
+initHealth();
+
+refresh();
+// 页面不可见时暂停轮询，回来立刻刷一次；平时 3 秒轮询（未变化的项目不重绘）
+setInterval(() => { if (!document.hidden) refresh(); }, 3000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>
