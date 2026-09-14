@@ -1,132 +1,62 @@
-// ui.js — 渲染与操作：项目卡片差分渲染、镜头操作、大图查看
-const MODE_NOTE = {
-  mock: '当前为 mock 模式（无 GPU 演示，含模拟抽卡失败）',
-  real: '当前为 real 模式（对接真实生成服务）'
-};
-const PROJ_STATUS = {
-  created: '已创建', running: '生成中', design_ready: '待确认定妆',
-  frames_ready: '待确认首帧', done: '已完成', error: '出错',
-  dubbing: '配音合成中', tts_running: '配音合成中'
-};
-function shotStatusText(st) {
-  st = String(st);
-  if (st === 'done') return '完成';
-  if (st === 'pending') return '待视频';
-  if (st === 'generating_frame') return '首帧生成中';
-  if (st === 'frame_failed') return '首帧失败';
-  if (st === 'generating_video') return '视频生成中';
-  if (st === 'failed') return '失败';
-  if (st.startsWith('retry') || st.startsWith('regen')) return '重抽中';
-  return st;
+// detail.js — 任务详情页：完整项目卡片（角色/镜头/正片），保留媒体节点复用
+const voiceDrafts = {};   // pid -> 音色输入框草稿
+let lastDetailSnap = {};
+let currentDetailPid = '';
+
+async function pageProjectDetail(pid) {
+  currentDetailPid = pid;
+  pageRefreshers.project = () => refreshDetail(currentDetailPid);
+  document.getElementById('detailMissing').style.display = 'none';
+  await refreshDetail(pid);
 }
 
-function toast(msg, err) {
-  const t = document.createElement('div');
-  t.className = 'toast' + (err ? ' err' : '');
-  t.textContent = msg;
-  document.getElementById('toasts').appendChild(t);
-  setTimeout(() => t.remove(), err ? 5000 : 3000);
-}
-
-async function api(path, opts) {
-  const r = await fetch(path, opts ? {headers:{'Content-Type':'application/json'}, ...opts} : undefined);
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-
-async function createAndRun() {
-  const title = document.getElementById('title').value.trim();
-  const idea = document.getElementById('idea').value.trim();
-  if (!title || !idea) { toast('剧名和创意都要填', true); return; }
-  const btn = document.getElementById('btnCreate');
-  btn.disabled = true;
-  try {
-    const p = await api('/api/projects', {method:'POST', body: JSON.stringify({
-      title, idea,
-      n_shots: parseInt(document.getElementById('nshots').value) || 6,
-      style: document.getElementById('style').value || '写实电影感'
-    })});
-    // v2 流程：先只跑「分镜 + 角色定妆」，确认角色形象后再进首帧 → 视频
-    await api(`/api/projects/${p.id}/run?stage=design`, {method:'POST'});
-    document.getElementById('title').value = '';
-    document.getElementById('idea').value = '';
-    await refresh();
-    const el = document.getElementById('proj-' + p.id);
-    if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
-  } catch (e) {
-    toast('创建失败：' + e.message, true);
-  } finally { btn.disabled = false; }
-}
-
-// ---------- 渲染（按项目差分更新；媒体节点跨刷新复用，避免视频/图片被重置） ----------
-let lastSnap = {};        // pid -> 上次渲染的数据签名
-const voiceDrafts = {};   // pid -> 音色输入框草稿（重渲染后回填）
-let modeNote = '';        // 后端健康说明（由 /api/mode 维护，refresh 不覆盖）
-
-async function refresh() {
+async function refreshDetail(pid) {
+  if (!pid) return;
   let projects;
   try { projects = await api('/api/projects'); } catch { return; }
-  document.getElementById('modeTag').textContent = MODE_NOTE[window.__mode || 'mock'];
-  const container = document.getElementById('projects');
-  const pids = new Set();
-
-  for (const p of projects) {
-    pids.add(p.id);
-    const sig = JSON.stringify(p);
-    const card = document.getElementById('proj-' + p.id);
-    // 数据没变就完全不动这个项目的 DOM（输入框、正在看的视频都不受打扰）
-    if (card && lastSnap[p.id] === sig) continue;
-    lastSnap[p.id] = sig;
-
-    // 收集现有媒体节点（按 镜头id+类型+src 匹配），重绘后原样移回来——播放进度、缓冲都保留
-    const keeps = {};
-    if (card) card.querySelectorAll('.shot').forEach(el => {
-      const m = el.querySelector('.media img, .media video');
-      if (m) keeps[el.dataset.sid + '|' + m.tagName + '|' + (m.getAttribute('src') || '')] = m;
-    });
-
-    if (!card) {
-      const nc = document.createElement('div');
-      nc.id = 'proj-' + p.id; nc.className = 'card'; nc.dataset.pid = p.id;
-      container.appendChild(nc);
-    }
-    document.getElementById('proj-' + p.id).innerHTML = buildCard(p);
-
-    // 把保留的媒体节点移回对应镜头
-    const fresh = document.getElementById('proj-' + p.id);
-    fresh.querySelectorAll('.shot').forEach(el => {
-      const m = el.querySelector('.media img, .media video');
-      if (!m) return;
-      const k = el.dataset.sid + '|' + m.tagName + '|' + (m.getAttribute('src') || '');
-      if (keeps[k]) m.replaceWith(keeps[k]);
-    });
-    // 回填音色草稿
-    const inp = fresh.querySelector('.voice-input');
-    if (inp && voiceDrafts[p.id] !== undefined) inp.value = voiceDrafts[p.id];
+  const p = projects.find(x => x.id === pid);
+  const box = document.getElementById('detailBox');
+  if (!p) {
+    box.innerHTML = '';
+    document.getElementById('detailMissing').style.display = '';
+    return;
   }
-  // 清掉已删除项目的 DOM
-  container.querySelectorAll('.card[data-pid]').forEach(c => {
-    if (!pids.has(c.dataset.pid)) { delete lastSnap[c.dataset.pid]; c.remove(); }
+  const sig = JSON.stringify(p);
+  if (lastDetailSnap[pid] === sig && box.dataset.pid === pid) return;   // 没变不动
+  lastDetailSnap[pid] = sig;
+  box.dataset.pid = pid;
+
+  // 收集现有媒体节点，重绘后原样移回（播放进度、缓冲都保留）
+  const keeps = {};
+  box.querySelectorAll('.shot').forEach(el => {
+    const m = el.querySelector('.media img, .media video');
+    if (m) keeps[el.dataset.sid + '|' + m.tagName + '|' + (m.getAttribute('src') || '')] = m;
   });
+
+  box.innerHTML = buildDetail(p);
+
+  box.querySelectorAll('.shot').forEach(el => {
+    const m = el.querySelector('.media img, .media video');
+    if (!m) return;
+    const k = el.dataset.sid + '|' + m.tagName + '|' + (m.getAttribute('src') || '');
+    if (keeps[k]) m.replaceWith(keeps[k]);
+  });
+  const inp = box.querySelector('.voice-input');
+  if (inp && voiceDrafts[pid] !== undefined) inp.value = voiceDrafts[pid];
 }
 
-function fmtSec(s) {
-  return s >= 3600 ? `${Math.floor(s/3600)}h${Math.round(s%3600/60)}m`
-       : s >= 60 ? `${Math.floor(s/60)}m${Math.round(s%60)}s` : `${s}s`;
-}
-
-function buildCard(p) {
-  const doneN = (p.shots || []).filter(s => s.video_status === 'done').length;
-  const total = (p.shots || []).length;
-  const elapsed = p.status === 'running' || p.status === 'dubbing'
-    ? Math.round(Date.now() / 1000 - p.pipeline_started_at)
-    : (p.elapsed_total || 0);
+function buildDetail(p) {
+  const shots = p.shots || [];
+  const doneN = shots.filter(s => s.video_status === 'done').length;
+  const total = shots.length;
+  const running = p.status === 'running' || p.status === 'dubbing';
+  const elapsed = running ? Math.round(Date.now() / 1000 - p.pipeline_started_at) : (p.elapsed_total || 0);
   return `
     <div class="proj">
       <div>
         <strong>${p.title}</strong>
         <span class="status ${p.status}">${PROJ_STATUS[p.status] || p.status}</span>
-        ${total ? `<div class="meta" style="margin-top:4px">${doneN}/${total} 成片 · 耗时 ${fmtSec(elapsed)}${p.status === 'running' || p.status === 'dubbing' ? '（计时中）' : ''}</div>` : ''}
+        ${total ? `<div class="meta" style="margin-top:4px">${doneN}/${total} 成片 · 耗时 ${fmtSec(elapsed)}${running ? '（计时中）' : ''}</div>` : ''}
         <div class="meta">创意：${p.idea}　·　画风：${p.style}　·　${p.created_at}</div>
       </div>
       <button class="ghost" style="color:var(--red);border-color:rgba(248,113,113,.3);" onclick="delProject('${p.id}', '${p.title.replace(/'/g, '')}')">删除</button>
@@ -153,11 +83,11 @@ function buildCard(p) {
       <span>❌ 定妆全部失败，查看日志排查后重试</span>
       <button style="margin-top:0;background:linear-gradient(135deg,#f87171,#dc2626);" onclick="retryDesign('${p.id}')">重试定妆</button>
     </div>` : ''}
-    ${p.status === 'frames_ready' && (p.shots || []).some(s => s.frame_url) ? `<div class="banner ok">
+    ${p.status === 'frames_ready' && shots.some(s => s.frame_url) ? `<div class="banner ok">
       <span>✅ 首帧已出完，检查画面和人物形象，满意后开跑视频（视频生成慢，确认后再跑）</span>
       <button style="margin-top:0;white-space:nowrap;" onclick="runVideos('${p.id}')">开始生成视频</button>
     </div>` : ''}
-    ${p.status === 'done' && (p.shots || []).some(s => s.video_url) ? `<div class="banner info">
+    ${p.status === 'done' && shots.some(s => s.video_url) ? `<div class="banner info">
       <input class="voice-input" placeholder="音色描述（如：年轻男性，声音低沉温暖），留空用默认" style="flex:1;padding:8px 12px;font-size:13px;" oninput="voiceDrafts['${p.id}']=this.value">
       <button style="margin-top:0;white-space:nowrap;" onclick="genTts('${p.id}')">${p.final_url ? '重新配音+合成正片' : '生成配音+合成正片'}</button>
     </div>` : ''}
@@ -166,13 +96,13 @@ function buildCard(p) {
       <video src="${p.final_url}" controls></video>
       <div style="margin-top:8px"><a href="${p.final_url}" download="${p.title}.mp4">下载正片 ↓</a></div>
     </div>` : ''}
-    ${p.status === 'frames_ready' && !(p.shots || []).some(s => s.frame_url) ? `<div class="banner bad">
-      <span>❌ 首帧全部失败（0/${(p.shots || []).length}），查看日志排查后重试</span>
+    ${p.status === 'frames_ready' && !shots.some(s => s.frame_url) ? `<div class="banner bad">
+      <span>❌ 首帧全部失败（0/${total}），查看日志排查后重试</span>
       <button style="margin-top:0;background:linear-gradient(135deg,#f87171,#dc2626);" onclick="retryFrames('${p.id}')">重试首帧</button>
     </div>` : ''}
-    ${p.char_ref && p.shots && p.shots.some(s => s.char_unified) ? `<div class="meta" style="margin-top:8px">🧑 角色参考图：第一张成功首帧，其余镜头已经 Edit 模型统一人物形象</div>` : ''}
-    ${p.shots && p.shots.length ? `<div class="shots">
-      ${p.shots.map(s => {
+    ${p.char_ref && shots.some(s => s.char_unified) ? `<div class="meta" style="margin-top:8px">🧑 角色参考图：第一张成功首帧，其余镜头已经 Edit 模型统一人物形象</div>` : ''}
+    ${shots.length ? `<div class="shots">
+      ${shots.map(s => {
         const vid = s.video_status === 'done' && s.video_url;
         const showBar = ['generating_video', 'generating_frame', 'pending'].includes(s.video_status) || String(s.video_status).startsWith('retry') || String(s.video_status).startsWith('regen');
         const pct = s.video_status === 'generating_video' ? (s.progress || 0) : showBar ? 0 : null;
@@ -208,35 +138,13 @@ function buildCard(p) {
     </div>` : ''}`;
 }
 
-function phText(s) {
-  const st = String(s.video_status);
-  if (st === 'pending') return s.frame_url ? '首帧已确认，待视频' : '排队中';
-  if (st.startsWith('frame')) return '首帧生成失败';
-  if (st === 'failed') return '生成失败';
-  if (st.startsWith('generating') || st.startsWith('retry') || st.startsWith('regen')) return '生成中…';
-  return 'mock 模拟（无真实媒体）';
-}
-
-function openViewer(url, type) {
-  if (!url) return;
-  const v = document.getElementById('viewer');
-  v.innerHTML = type === 'video' ? `<video src="${url}" controls autoplay loop></video>` : `<img src="${url}">`;
-  v.classList.add('on');
-}
-
-function badgeCls(st) {
-  if (st === 'done') return 'b-done';
-  if (st === 'failed' || st === 'frame_failed') return 'b-fail';
-  if (st === 'pending') return 'b-pend';
-  return 'b-run';
-}
-
+// ---------- 镜头/项目操作 ----------
 async function regen(sid) {
   try {
     await api(`/api/shots/${sid}/regenerate?mode=video`, {method:'POST'});
     toast('镜头 ' + sid + ' 视频重抽中');
   } catch (e) { toast('重抽失败：' + e.message, true); }
-  refresh();
+  refreshDetail(currentDetailPid);
 }
 
 async function regenFrame(sid) {
@@ -244,7 +152,7 @@ async function regenFrame(sid) {
     await api(`/api/shots/${sid}/regenerate?mode=frame`, {method:'POST'});
     toast('镜头 ' + sid + ' 首帧重抽中');
   } catch (e) { toast('重抽失败：' + e.message, true); }
-  refresh();
+  refreshDetail(currentDetailPid);
 }
 
 async function editDialogue(sid, cur) {
@@ -254,7 +162,7 @@ async function editDialogue(sid, cur) {
     await api(`/api/shots/${sid}/dialogue`, {method:'POST', body: JSON.stringify({dialogue: d.trim()})});
     toast('台词已更新');
   } catch (e) { toast('台词更新失败：' + e.message, true); }
-  refresh();
+  refreshDetail(currentDetailPid);
 }
 
 async function runFrames(pid) {
@@ -262,7 +170,7 @@ async function runFrames(pid) {
     await api(`/api/projects/${pid}/run_frames`, {method:'POST'});
     toast('定妆已确认，首帧生成中');
   } catch (e) { toast('启动失败：' + e.message, true); }
-  refresh();
+  refreshDetail(pid);
 }
 
 async function retryDesign(pid) {
@@ -270,7 +178,7 @@ async function retryDesign(pid) {
     await api(`/api/projects/${pid}/run?stage=design`, {method:'POST'});
     toast('定妆重试中');
   } catch (e) { toast('重试失败：' + e.message, true); }
-  refresh();
+  refreshDetail(pid);
 }
 
 async function regenChar(pid, name) {
@@ -278,7 +186,7 @@ async function regenChar(pid, name) {
     await api(`/api/characters/${pid}/regenerate`, {method:'POST', body: JSON.stringify({name})});
     toast('角色「' + name + '」定妆重抽中');
   } catch (e) { toast('重抽失败：' + e.message, true); }
-  refresh();
+  refreshDetail(pid);
 }
 
 async function runVideos(pid) {
@@ -287,7 +195,7 @@ async function runVideos(pid) {
     await api(`/api/projects/${pid}/run_videos`, {method:'POST'});
     toast('视频阶段已启动');
   } catch (e) { toast('启动失败：' + e.message, true); }
-  refresh();
+  refreshDetail(pid);
 }
 
 async function retryFrames(pid) {
@@ -295,26 +203,15 @@ async function retryFrames(pid) {
     await api(`/api/projects/${pid}/run?stage=frames`, {method:'POST'});
     toast('首帧重试中');
   } catch (e) { toast('重试失败：' + e.message, true); }
-  refresh();
+  refreshDetail(pid);
 }
 
 async function genTts(pid) {
-  const inp = document.querySelector(`#proj-${pid} .voice-input`);
+  const inp = document.querySelector(`#detailBox .voice-input`);
   const body = { voice_desc: inp ? inp.value.trim() : '' };
   try {
     await api(`/api/projects/${pid}/tts`, {method:'POST', body: JSON.stringify(body)});
     toast('配音+合成已启动');
   } catch (e) { toast('启动失败：' + e.message, true); }
-  refresh();
-}
-
-async function delProject(pid, title) {
-  if (!confirm(`删除项目「${title}」？其首帧和视频文件一并清除，不可恢复`)) return;
-  try {
-    const r = await api(`/api/projects/${pid}`, {method:'DELETE'});
-    toast(r.msg || '已删除');
-  } catch (e) {
-    toast('删除失败：' + e.message, true);
-  }
-  refresh();
+  refreshDetail(pid);
 }

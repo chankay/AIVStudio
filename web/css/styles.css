@@ -26,13 +26,28 @@
     min-height: 100vh;
   }
   .wrap { max-width: 920px; margin: 0 auto; }
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
   h1 {
     font-size: 22px; font-weight: 600; letter-spacing: .5px;
     background: linear-gradient(90deg, #fff, #b9c2ff);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   }
-  .sub { font-size: 13px; color: var(--txt-3); margin: 6px 0 14px; }
-  .health { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+  .sub { font-size: 13px; color: var(--txt-3); margin: 6px 0 0; }
+  .health { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .nav {
+    display: flex; gap: 6px; margin: 20px 0 18px; padding: 5px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    width: fit-content;
+  }
+  .nav a {
+    color: var(--txt-2); text-decoration: none; font-size: 13px;
+    padding: 7px 16px; border-radius: 8px; transition: background .15s, color .15s;
+  }
+  .nav a:hover { color: var(--txt); }
+  .nav a.on { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+  .stage-tip { font-size: 12px; color: var(--amber); margin-left: 10px; }
+  .plist-card { cursor: pointer; transition: border-color .15s, transform .15s; }
+  .plist-card:hover { border-color: #3a4050; transform: translateY(-1px); }
   .chip {
     font-size: 12px; padding: 4px 12px; border-radius: 99px;
     background: var(--panel); border: 1px solid var(--line); color: var(--txt-2);
@@ -151,11 +166,6 @@
   .toast.err { border-color: rgba(248,113,113,.4); color: var(--red); }
   @keyframes tin { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
-  #configModal { position: fixed; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
-    display: none; align-items: flex-start; justify-content: center; z-index: 200; overflow-y: auto; padding: 6vh 16px; }
-  #configModal.on { display: flex; }
-  .config-box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-    padding: 20px 22px; width: 560px; max-width: 96vw; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
   .cfg-group { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
   .cfg-group .cfg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
   .cfg-group .cfg-head b { font-size: 13px; }

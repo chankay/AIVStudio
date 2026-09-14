@@ -8,46 +8,75 @@
 </head>
 <body>
 <div class="wrap">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-    <h1>AI 网剧流水线</h1>
-    <button class="ghost" style="margin-top:4px;" onclick="openConfig()">⚙ 模型后端配置</button>
-  </div>
-  <div class="sub" id="modeTag">…</div>
-  <div class="health" id="health"></div>
-
-  <div class="card">
-    <label>剧名</label>
-    <input id="title" placeholder="例：城中村理发店">
-    <label>一句话创意</label>
-    <textarea id="idea" placeholder="例：一个失业程序员接手了父亲的理发店，在形形色色的客人身上重新理解生活"></textarea>
-    <div style="display:flex; gap:16px;">
-      <div style="flex:1;"><label>镜头数</label><input id="nshots" type="number" value="6" min="3" max="12"></div>
-      <div style="flex:2;"><label>画风</label><input id="style" value="写实电影感"></div>
+  <div class="topbar">
+    <div>
+      <h1>AI 网剧流水线</h1>
+      <div class="sub" id="modeTag">…</div>
     </div>
-    <button id="btnCreate" onclick="createAndRun()">生成分镜并开跑</button>
-    <span id="createMsg" style="font-size:12px;color:var(--txt-3);margin-left:10px;"></span>
+    <div class="health" id="health"></div>
   </div>
 
-  <div id="projects"></div>
+  <nav class="nav">
+    <a href="#/projects" data-page="projects">📋 任务列表</a>
+    <a href="#/new" data-page="new">✨ 新建任务</a>
+    <a href="#/settings" data-page="settings">⚙️ 系统配置</a>
+  </nav>
+
+  <!-- 任务列表页 -->
+  <section id="page-projects">
+    <div id="listEmpty" class="card" style="text-align:center;color:var(--txt-3);padding:48px 20px;display:none;">
+      还没有任务，去 <a href="#/new" style="color:var(--accent)">新建一个</a> 吧
+    </div>
+    <div id="projectList"></div>
+  </section>
+
+  <!-- 新建任务页 -->
+  <section id="page-new" style="display:none;">
+    <div class="card">
+      <label>剧名</label>
+      <input id="title" placeholder="例：城中村理发店">
+      <label>一句话创意</label>
+      <textarea id="idea" placeholder="例：一个失业程序员接手了父亲的理发店，在形形色色的客人身上重新理解生活"></textarea>
+      <div style="display:flex; gap:16px;">
+        <div style="flex:1;"><label>镜头数</label><input id="nshots" type="number" value="6" min="3" max="12"></div>
+        <div style="flex:2;"><label>画风</label><input id="style" value="写实电影感"></div>
+      </div>
+      <button id="btnCreate" onclick="createAndRun()">生成分镜并开跑</button>
+      <span id="createMsg" style="font-size:12px;color:var(--txt-3);margin-left:10px;"></span>
+    </div>
+  </section>
+
+  <!-- 任务详情页 -->
+  <section id="page-project" style="display:none;">
+    <div id="detailMissing" class="card" style="text-align:center;color:var(--txt-3);padding:48px 20px;display:none;">
+      任务不存在或已被删除，<a href="#/projects" style="color:var(--accent)">返回列表</a>
+    </div>
+    <div id="detailBox" class="card"></div>
+  </section>
+
+  <!-- 系统配置页 -->
+  <section id="page-settings" style="display:none;">
+    <div class="card">
+      <h3 style="margin:0 0 4px;font-size:16px;">模型后端配置</h3>
+      <div style="font-size:12px;color:var(--txt-3);margin-bottom:10px;">修改后立即生效（无需重启服务）。Key 留空表示不修改。</div>
+      <div id="configBody"></div>
+      <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;">
+        <button class="ghost" onclick="testAllBackends()" id="btnTestCfg">测试连通性</button>
+        <button onclick="saveConfig()">保存</button>
+      </div>
+    </div>
+  </section>
 </div>
 
 <div id="viewer" onclick="this.classList.remove('on')"></div>
-<div id="configModal" onclick="if(event.target===this)this.classList.remove('on')">
-  <div class="config-box">
-    <h3 style="margin:0 0 4px;font-size:16px;">模型后端配置</h3>
-    <div style="font-size:12px;color:var(--txt-3);margin-bottom:10px;">修改后立即生效（无需重启服务）。Key 留空表示不修改。</div>
-    <div id="configBody"></div>
-    <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;">
-      <button class="ghost" onclick="testAllBackends()" id="btnTestCfg">测试连通性</button>
-      <button class="ghost" onclick="document.getElementById('configModal').classList.remove('on')">取消</button>
-      <button style="margin-top:0;" onclick="saveConfig()">保存</button>
-    </div>
-  </div>
-</div>
 <div id="toasts"></div>
 <script src="/web/js/api.js"></script>
-<script src="/web/js/ui.js"></script>
-<script src="/web/js/config.js"></script>
+<script src="/web/js/common.js"></script>
+<script src="/web/js/router.js"></script>
+<script src="/web/js/projects.js"></script>
+<script src="/web/js/new.js"></script>
+<script src="/web/js/detail.js"></script>
+<script src="/web/js/settings.js"></script>
 <script src="/web/js/app.js"></script>
 </body>
 </html>

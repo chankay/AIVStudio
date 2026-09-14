@@ -1,5 +1,4 @@
-// app.js — 入口：健康状态初始化 + SSE 实时推送（降级轮询）
-// 初始化：拉模式与健康状态
+// app.js — 入口：健康状态 + SSE 实时推送（降级轮询），SSE 只刷新当前页
 async function initHealth() {
   try {
     const m = await api('/api/mode');
@@ -20,7 +19,7 @@ async function initHealth() {
 }
 
 // ---------------- SSE 实时推送 ----------------
-// 后端数据变更时推 {"v": 版本号, "what": 类型}，前端收到后拉一次 /api/projects 做差分渲染。
+// 后端数据变更时推 {"v": 版本号, "what": 类型}，前端收到后只刷新当前路由页。
 // SSE 断连或不可用时自动退回 3 秒轮询（体验不降级，只是稍慢）。
 let sse = null;
 let sseOk = false;
@@ -29,7 +28,7 @@ let pollTimer = null;
 function startPolling() {
   if (pollTimer) return;
   console.warn('[sse] 不可用，退回 3s 轮询');
-  pollTimer = setInterval(() => { if (!document.hidden) refresh(); }, 3000);
+  pollTimer = setInterval(() => { if (!document.hidden) refreshCurrent(); }, 3000);
 }
 
 function stopPolling() {
@@ -42,7 +41,7 @@ function connectSSE() {
   sse.onopen = () => { sseOk = true; stopPolling(); };
   sse.onmessage = (ev) => {
     if (document.hidden) return;              // 后台标签页不刷新，回来靠 visibilitychange 对齐
-    refresh();                                 // 轻量事件 -> 拉一次全量做差分
+    refreshCurrent();                          // 轻量事件 -> 只刷当前页
     if (ev.data && ev.data.includes('"task"')) initHealth();  // 任务事件顺带刷新健康徽章
   };
   sse.onerror = () => {
@@ -52,14 +51,14 @@ function connectSSE() {
   };
 }
 
-// 页面可见性变化：SSE 正常时回来对齐拉一次；轮询模式下确保轮询在跑
+// 页面可见性变化：SSE 正常时回来对齐刷一次；轮询模式下确保轮询在跑
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
-    refresh();
+    refreshCurrent();
     if (!sseOk) startPolling();
   }
 });
 
 initHealth();
-refresh();
+renderRoute();
 connectSSE();
