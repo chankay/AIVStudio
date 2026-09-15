@@ -156,6 +156,16 @@ async def gen_storyboard(idea: str, n_shots: int) -> dict:
 
 
 async def _storyboard_real(idea: str, n_shots: int, llm: dict):
+    last_err: Exception | None = None
+    for attempt in range(2):
+        try:
+            return await _storyboard_call(idea, n_shots, llm)
+        except RuntimeError as e:
+            last_err = e   # 思考型模型偶发把 max_tokens 全花在思考上（content 为空），重试一次
+    raise last_err
+
+
+async def _storyboard_call(idea: str, n_shots: int, llm: dict):
     async with httpx.AsyncClient(trust_env=False, timeout=300) as client:
         r = await client.post(
             f"{llm['url']}/chat/completions",
@@ -167,15 +177,20 @@ async def _storyboard_real(idea: str, n_shots: int, llm: dict):
                     {"role": "user", "content": idea},
                 ],
                 "temperature": 0.8,
-                # GLM-5.3-Flash 是思考型模型：思考吃 token，必须给足余量
-                "max_tokens": 4096,
+                # 思考型模型：思考 + 正文共享 max_tokens，分镜 JSON 较长，余量必须给足
+                "max_tokens": 16384,
             },
         )
         r.raise_for_status()
         msg = r.json()["choices"][0]["message"]
         content = msg.get("content") or ""
     if not content.strip():
-        raise RuntimeError(f"LLM 返回空 content（可能思考超长被截断）: {str(msg)[:200]}")
+        finish = ""
+        try:
+            finish = r.json()["choices"][0].get("finish_reason") or ""
+        except Exception:
+            pass
+        raise RuntimeError(f"LLM 返回空 content（思考超长被截断, finish_reason={finish}）: {str(msg)[:200]}")
     start, end = content.find("{"), content.rfind("}") + 1
     plan = json.loads(content[start:end])
     shots = plan.get("shots") or []
