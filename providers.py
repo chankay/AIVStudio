@@ -507,11 +507,10 @@ async def gen_tts(text: str, voice_desc: str = "", shot_id: str = "tts", pid: st
         "input": text,
         "response_format": "wav",
     }
-    if voice_desc:
-        # Qwen3-TTS VoiceDesign：task_type=VoiceDesign + instructions 音色描述
-        # （不带 task_type 时默认 CustomVoice，无 speakers 配置会 400）
-        payload["task_type"] = "VoiceDesign"
-        payload["instructions"] = voice_desc
+    # 该部署未配置 speakers，CustomVoice 会 400；Base 需要参考音频克隆。
+    # 因此统一走 VoiceDesign：有音色描述用描述，没有则给通用默认描述。
+    payload["task_type"] = "VoiceDesign"
+    payload["instructions"] = (voice_desc or "自然清晰的普通话旁白，语速平稳，音色中性耐听").strip()
     try:
         async with httpx.AsyncClient(trust_env=False, timeout=300) as client:
             r = await client.post(
@@ -519,7 +518,10 @@ async def gen_tts(text: str, voice_desc: str = "", shot_id: str = "tts", pid: st
                 headers={"Authorization": f"Bearer {tts['key']}"},
                 json=payload,
             )
-            r.raise_for_status()
+            if r.status_code >= 400:
+                # 带上响应体，避免 400 只有状态码看不到原因
+                detail = (r.text or "").strip()[:200]
+                raise RuntimeError(f"HTTP {r.status_code}: {detail}")
             audio = r.content
     except Exception as e:
         raise RuntimeError(f"TTS 合成失败: {str(e)[:150]}") from e
