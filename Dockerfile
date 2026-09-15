@@ -8,6 +8,10 @@ RUN pip install --no-cache-dir --prefix=/install-pkg -r requirements.txt
 FROM python:3.12-slim
 WORKDIR /app
 
+# ffmpeg：TTS 配音混流 + 正片拼接依赖（apt 版体积可控，静态版反而拖大镜像）
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # 依赖
 COPY --from=deps /install-pkg /usr/local
 
