@@ -121,7 +121,7 @@ function buildDetail(p) {
         const vid = s.video_status === 'done' && s.video_url;
         const showBar = ['generating_video', 'generating_frame', 'pending'].includes(s.video_status) || String(s.video_status).startsWith('retry') || String(s.video_status).startsWith('regen');
         const pct = s.video_status === 'generating_video' ? (s.progress || 0) : showBar ? 0 : null;
-        const metaBits = [s.camera, `${s.duration}s`];
+        const metaBits = [cameraText(s.camera), `${s.duration}s`];
         if (s.attempts) metaBits.push(`抽卡${s.attempts}次`);
         if (s.frame_elapsed) metaBits.push(`首帧${fmtSec(s.frame_elapsed)}`);
         if (s.video_elapsed) metaBits.push(`视频${fmtSec(s.video_elapsed)}`);

@@ -37,6 +37,20 @@ function badgeCls(st) {
   return 'b-run';
 }
 
+// 运镜术语：模型/分镜用英文（生成质量稳），界面显示加中文
+const CAMERA_ZH = {
+  'push-in': '推镜', 'push in': '推镜', 'pull-back': '拉镜', 'pull-out': '拉远',
+  'static': '固定', 'rack focus': '变焦转移', 'rack-focus': '变焦转移',
+  'pan': '摇镜', 'tilt': '俯仰', 'dolly': '移动跟拍', 'tracking': '跟踪',
+  'zoom-in': '变焦推近', 'zoom-out': '变焦拉远', 'handheld': '手持', 'aerial': '航拍',
+  'crane': '摇臂', 'close-up': '特写', 'wide': '全景', 'fpv': '第一视角'
+};
+
+function cameraText(cam) {
+  const key = String(cam || '').trim().toLowerCase();
+  return CAMERA_ZH[key] ? `${CAMERA_ZH[key]} ${cam}` : cam;
+}
+
 function fmtSec(s) {
   return s >= 3600 ? `${Math.floor(s/3600)}h${Math.round(s%3600/60)}m`
        : s >= 60 ? `${Math.floor(s/60)}m${Math.round(s%60)}s` : `${s}s`;
