@@ -4,7 +4,8 @@ async function initHealth() {
     const m = await api('/api/mode');
     window.__mode = m.mode;
     modeNote = m.note || '';
-    document.getElementById('modeTag').textContent = MODE_NOTE[m.mode] + (modeNote && modeNote !== '后端已配置' ? `（${modeNote}）` : '');
+    const modeTag = document.getElementById('modeTag');
+    if (modeTag) modeTag.textContent = MODE_NOTE[m.mode] + (modeNote && modeNote !== '后端已配置' ? `（${modeNote}）` : '');
 
     // 侧栏迷你状态灯：全部正常=绿，部分不可达=黄，全挂=红
     const items = [
@@ -13,12 +14,13 @@ async function initHealth() {
     ];
     const upN = items.filter(([, up]) => up).length;
     const mini = document.getElementById('backendMini');
-    const dot = document.getElementById('backendDot');
     const text = document.getElementById('backendText');
-    mini.classList.remove('ok', 'bad', 'warn');
-    if (upN === items.length) { mini.classList.add('ok'); text.textContent = '后端正常'; }
-    else if (upN === 0) { mini.classList.add('bad'); text.textContent = '后端全部离线'; }
-    else { mini.classList.add('warn'); text.textContent = `后端 ${upN}/${items.length}`; }
+    if (mini && text) {
+      mini.classList.remove('ok', 'bad', 'warn');
+      if (upN === items.length) { mini.classList.add('ok'); text.textContent = '后端正常'; }
+      else if (upN === 0) { mini.classList.add('bad'); text.textContent = '后端全部离线'; }
+      else { mini.classList.add('warn'); text.textContent = `后端 ${upN}/${items.length}`; }
+    }
 
     // 配置页内的详细徽章（仅当该页渲染过时存在）
     const h = document.getElementById('health');
@@ -27,9 +29,12 @@ async function initHealth() {
     ).join('');
   } catch (e) {
     const mini = document.getElementById('backendMini');
-    if (mini) { mini.classList.remove('ok', 'warn'); mini.classList.add('bad'); }
-    const t = document.getElementById('backendText');
-    if (t) t.textContent = '状态未知';
+    const text = document.getElementById('backendText');
+    if (mini && text) {
+      mini.classList.remove('ok', 'warn');
+      mini.classList.add('bad');
+      text.textContent = '状态未知';
+    }
   }
 }
 
