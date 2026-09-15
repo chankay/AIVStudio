@@ -42,6 +42,27 @@ function fmtSec(s) {
        : s >= 60 ? `${Math.floor(s/60)}m${Math.round(s%60)}s` : `${s}s`;
 }
 
+// 「计时中」走字：仅运行中的项目更新耗时文本，不动 DOM 其他部分。
+// 全局单例，无运行项目时自动停。
+let _tickTimer = null;
+
+function startElapsedTicker() {
+  if (_tickTimer) return;
+  _tickTimer = setInterval(() => {
+    const nodes = document.querySelectorAll('[data-elapsed-start]');
+    if (!nodes.length) { stopElapsedTicker(); return; }
+    const now = Math.round(Date.now() / 1000);
+    nodes.forEach(el => {
+      const t = document.getElementById(el.dataset.elapsedText);
+      if (t) t.textContent = fmtSec(now - parseInt(el.dataset.elapsedStart));
+    });
+  }, 1000);
+}
+
+function stopElapsedTicker() {
+  if (_tickTimer) { clearInterval(_tickTimer); _tickTimer = null; }
+}
+
 function toast(msg, err) {
   const t = document.createElement('div');
   t.className = 'toast' + (err ? ' err' : '');

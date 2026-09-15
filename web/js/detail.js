@@ -36,6 +36,9 @@ async function refreshDetail(pid) {
     const m = el.querySelector('.media img, .media video');
     if (m) keeps[el.dataset.sid + '|' + m.tagName + '|' + (m.getAttribute('src') || '')] = m;
   });
+  // 正片视频也保护：正在看时不能被 SSE 重绘打断
+  const finalVid = box.querySelector('.final-box video');
+  if (finalVid && !finalVid.paused) keeps['final|' + finalVid.tagName + '|' + (finalVid.getAttribute('src') || '')] = finalVid;
 
   box.innerHTML = buildDetail(p);
 
@@ -45,8 +48,16 @@ async function refreshDetail(pid) {
     const k = el.dataset.sid + '|' + m.tagName + '|' + (m.getAttribute('src') || '');
     if (keeps[k]) m.replaceWith(keeps[k]);
   });
+  const freshFinal = box.querySelector('.final-box video');
+  if (freshFinal) {
+    const k = 'final|' + freshFinal.tagName + '|' + (freshFinal.getAttribute('src') || '');
+    if (keeps[k]) freshFinal.replaceWith(keeps[k]);
+  }
   const inp = box.querySelector('.voice-input');
   if (inp && voiceDrafts[pid] !== undefined) inp.value = voiceDrafts[pid];
+
+  // 运行中项目：启动「计时中」走字
+  if (box.querySelector('[data-elapsed-start]')) startElapsedTicker();
 }
 
 function buildDetail(p) {
@@ -60,7 +71,7 @@ function buildDetail(p) {
       <div>
         <strong>${p.title}</strong>
         <span class="status ${p.status}">${PROJ_STATUS[p.status] || p.status}</span>
-        ${total ? `<div class="meta" style="margin-top:4px">${doneN}/${total} 成片 · 耗时 ${fmtSec(elapsed)}${running ? '（计时中）' : ''}</div>` : ''}
+        ${total ? `<div class="meta" style="margin-top:4px" ${running ? `data-elapsed-start="${p.pipeline_started_at}" data-elapsed-text="d-elapsed-${p.id}"` : ''}>${doneN}/${total} 成片 · 耗时 <span id="d-elapsed-${p.id}">${fmtSec(elapsed)}</span>${running ? '（计时中）' : ''}</div>` : ''}
         <div class="meta">创意：${p.idea}　·　画风：${p.style}　·　${p.created_at}</div>
       </div>
       <button class="ghost" style="color:var(--red);border-color:rgba(248,113,113,.3);" onclick="delProject('${p.id}', '${p.title.replace(/'/g, '')}')">删除</button>

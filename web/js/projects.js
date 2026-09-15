@@ -9,6 +9,7 @@ async function pageProjects() {
 async function refreshProjects() {
   let projects;
   try { projects = await api('/api/projects'); } catch { return; }
+  projects = projects.slice().reverse();      // 新任务在前（后端按创建序返回）
   const container = document.getElementById('projectList');
   const pids = new Set();
 
@@ -28,7 +29,7 @@ async function refreshProjects() {
         if (e.target.closest('button')) return;   // 卡片内按钮不触发跳转
         nav('project', p.id);
       });
-      container.appendChild(nc);
+      container.prepend(nc);   // 新任务插到最前
     } else {
       card.innerHTML = html;
     }
@@ -37,6 +38,7 @@ async function refreshProjects() {
     if (!pids.has(c.dataset.pid)) { delete lastListSnap[c.dataset.pid]; c.remove(); }
   });
   document.getElementById('listEmpty').style.display = projects.length ? 'none' : '';
+  armTicker(container);
 }
 
 function buildListCard(p) {
@@ -58,8 +60,8 @@ function buildListCard(p) {
         <strong>${p.title}</strong>
         <span class="status ${p.status}">${PROJ_STATUS[p.status] || p.status}</span>
         ${stageTip ? `<span class="stage-tip">${stageTip}</span>` : ''}
-        <div class="meta" style="margin-top:4px">
-          ${total ? `${doneN}/${total} 镜头完成 · ` : ''}耗时 ${fmtSec(elapsed)}${running ? '（计时中）' : ''}
+        <div class="meta" style="margin-top:4px" ${running ? `data-elapsed-start="${p.pipeline_started_at}" data-elapsed-text="elapsed-${p.id}"` : ''}>
+          ${total ? `${doneN}/${total} 镜头完成 · ` : ''}耗时 <span id="elapsed-${p.id}">${fmtSec(elapsed)}</span>${running ? '（计时中）' : ''}
         </div>
         <div class="meta">创意：${p.idea.length > 50 ? p.idea.slice(0, 50) + '…' : p.idea}　·　画风：${p.style}　·　${p.created_at}</div>
       </div>
@@ -69,4 +71,9 @@ function buildListCard(p) {
       </div>
     </div>
     ${p.log && p.log.length ? `<div class="log">${p.log.slice(-3).join('<br>')}</div>` : ''}`;
+}
+
+// 渲染后如有运行中的项目，启动「计时中」走字
+function armTicker(container) {
+  if (container.querySelector('[data-elapsed-start]')) startElapsedTicker();
 }

@@ -67,7 +67,9 @@ async function submitAuth() {
     await api('/api/auth/' + (mode === 'setup' ? 'setup' : 'login'), {
       method: 'POST', body: JSON.stringify({username, password})
     });
-    location.href = '/';
+    // 按中间件带来的 next 回跳（仅允许站内路径，防开放跳转）
+    const next = new URLSearchParams(location.search).get('next') || '/';
+    location.href = next.startsWith('/') && !next.startsWith('//') ? next : '/';
   } catch (e) {
     toast(e.message.replace(/^"|"$/g, ''), true);
     btn.disabled = false;
