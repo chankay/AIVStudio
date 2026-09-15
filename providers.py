@@ -543,9 +543,13 @@ def _run_ffmpeg(args: list[str], timeout: int = 600):
 
 
 def mux_video_audio(video: str, audio: str, out: str):
-    """视频(无声)+配音 -> 有声视频。视频流直接 copy，音频转 AAC。"""
+    """视频(无声)+配音 -> 有声视频。视频流直接 copy，音频转 AAC。
+
+    注意：必须 apad + -shortest 组合（以视频长度为准，音频不足补静音），
+    不能只用 -shortest——那会以音频长度截断整段输出，台词没说完视频就断了。
+    """
     _run_ffmpeg(["-i", video, "-i", audio,
-                 "-c:v", "copy", "-c:a", "aac", "-shortest", out])
+                 "-c:v", "copy", "-af", "apad", "-c:a", "aac", "-shortest", out])
 
 
 def concat_final(clips: list[str], out: str, pid: str = ""):
