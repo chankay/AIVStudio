@@ -94,6 +94,26 @@ async def auth_logout(request: Request):
     return resp
 
 
+class ChangePwIn(BaseModel):
+    old_password: str
+    new_password: str
+
+
+@app.post("/api/auth/change_password")
+async def auth_change_password(request: Request, body: ChangePwIn):
+    """修改当前登录用户的密码。成功后吊销所有会话（含当前），需重新登录。"""
+    username = _session_user(request)
+    if not username:
+        raise HTTPException(401, "未登录")
+    err = auth.change_password(username, body.old_password, body.new_password)
+    if err:
+        raise HTTPException(400, err)
+    # 吊销全部会话：当前 cookie 立即失效，前端引导重新登录
+    resp = JSONResponse({"ok": True, "msg": "密码已更新，请重新登录"})
+    resp.delete_cookie(auth.SESSION_COOKIE)
+    return resp
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
     return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "login.html"))

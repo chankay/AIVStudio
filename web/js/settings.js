@@ -64,3 +64,24 @@ async function testAllBackends() {
   const nOk = Object.values(state).filter(s => s.ok).length;
   toast(`连通性测试：${nOk}/${Object.keys(CFG_LABELS).length} 个后端正常`, nOk < Object.keys(CFG_LABELS).length);
 }
+
+// ---------- 账号安全：修改密码 ----------
+async function changePassword() {
+  const oldPw = document.getElementById('pwOld').value;
+  const newPw = document.getElementById('pwNew').value;
+  const newPw2 = document.getElementById('pwNew2').value;
+  if (!oldPw || !newPw) { toast('旧密码和新密码都要填', true); return; }
+  if (newPw !== newPw2) { toast('两次输入的新密码不一致', true); return; }
+  const btn = document.getElementById('btnChangePw');
+  btn.disabled = true;
+  try {
+    await api('/api/auth/change_password', {method:'POST', body: JSON.stringify({
+      old_password: oldPw, new_password: newPw
+    })});
+    toast('密码已更新，请重新登录');
+    setTimeout(() => { location.href = '/login'; }, 1200);   // 会话已被服务端吊销
+  } catch (e) {
+    toast(e.message.replace(/^"|"$/g, ''), true);
+    btn.disabled = false;
+  }
+}

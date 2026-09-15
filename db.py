@@ -115,6 +115,14 @@ def get_user(username: str) -> dict | None:
     return dict(r) if r else None
 
 
+def update_password(username: str, pw_hash: str, salt: str):
+    """更新密码哈希；顺带吊销该用户所有会话（改密后需重新登录）。"""
+    init_db()
+    with _lock, _conn() as c:
+        c.execute("UPDATE users SET hash = ?, salt = ? WHERE username = ?", (pw_hash, salt, username))
+        c.execute("DELETE FROM sessions WHERE username = ?", (username,))
+
+
 def create_session(token: str, username: str, ttl_seconds: int):
     init_db()
     now = _time.time()

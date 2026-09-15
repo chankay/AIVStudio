@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI 网剧流水线</title>
-<link rel="stylesheet" href="/web/css/styles.css?v=1789439371">
+<link rel="stylesheet" href="/web/css/styles.css?v=1789439589">
 </head>
 <body>
 <div class="layout">
@@ -78,19 +78,32 @@
           <button onclick="saveConfig()">保存</button>
         </div>
       </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 4px;font-size:16px;">账号安全</h3>
+        <div style="font-size:12px;color:var(--txt-3);margin-bottom:10px;">修改密码后所有登录会话失效，需用新密码重新登录。密码至少 6 位。</div>
+        <div class="cfg-grid" style="max-width:420px;">
+          <label>旧密码</label><input id="pwOld" type="password" autocomplete="current-password">
+          <label>新密码</label><input id="pwNew" type="password" autocomplete="new-password">
+          <label>确认新密码</label><input id="pwNew2" type="password" autocomplete="new-password">
+        </div>
+        <div style="margin-top:14px;">
+          <button class="ghost" onclick="changePassword()" id="btnChangePw">修改密码</button>
+        </div>
+      </div>
     </section>
   </main>
 </div>
 
 <div id="viewer" onclick="this.classList.remove('on')"></div>
 <div id="toasts"></div>
-<script src="/web/js/api.js?v=1789439371"></script>
-<script src="/web/js/common.js?v=1789439371"></script>
-<script src="/web/js/router.js?v=1789439371"></script>
-<script src="/web/js/projects.js?v=1789439371"></script>
-<script src="/web/js/new.js?v=1789439371"></script>
-<script src="/web/js/detail.js?v=1789439371"></script>
-<script src="/web/js/settings.js?v=1789439371"></script>
-<script src="/web/js/app.js?v=1789439371"></script>
+<script src="/web/js/api.js?v=1789439589"></script>
+<script src="/web/js/common.js?v=1789439589"></script>
+<script src="/web/js/router.js?v=1789439589"></script>
+<script src="/web/js/projects.js?v=1789439589"></script>
+<script src="/web/js/new.js?v=1789439589"></script>
+<script src="/web/js/detail.js?v=1789439589"></script>
+<script src="/web/js/settings.js?v=1789439589"></script>
+<script src="/web/js/app.js?v=1789439589"></script>
 </body>
 </html>

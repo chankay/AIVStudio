@@ -69,6 +69,20 @@ def verify(username: str, password: str) -> bool:
     return secrets.compare_digest(u["hash"], _hash_pw(password, u["salt"]))
 
 
+def change_password(username: str, old_password: str, new_password: str) -> str | None:
+    """修改密码。成功返回 None，失败返回错误信息。"""
+    username = username.strip()
+    if not verify(username, old_password):
+        return "旧密码错误"
+    if len(new_password) < 6:
+        return "新密码至少 6 位"
+    if old_password == new_password:
+        return "新密码不能与旧密码相同"
+    salt = secrets.token_hex(16)
+    db.update_password(username, _hash_pw(new_password, salt), salt)
+    return None
+
+
 def new_session(username: str) -> str:
     token = secrets.token_urlsafe(32)
     db.create_session(token, username.strip(), SESSION_MAX_AGE)
