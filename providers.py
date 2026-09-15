@@ -12,6 +12,7 @@ import base64
 import json
 import os
 import random
+import re
 import time
 import uuid
 
@@ -157,12 +158,31 @@ async def gen_storyboard(idea: str, n_shots: int) -> dict:
 
 async def _storyboard_real(idea: str, n_shots: int, llm: dict):
     last_err: Exception | None = None
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             return await _storyboard_call(idea, n_shots, llm)
-        except RuntimeError as e:
-            last_err = e   # 思考型模型偶发把 max_tokens 全花在思考上（content 为空），重试一次
-    raise last_err
+        except (RuntimeError, json.JSONDecodeError, ValueError) as e:
+            last_err = e   # 思考超长（content 空）或 JSON 格式瑕疵均为偶发，自动重试
+    raise RuntimeError(f"分镜生成连续 {3} 次失败: {last_err}")
+
+
+def _loads_loose(text: str):
+    """解析 LLM 输出的 JSON；失败时做常见瑕疵修复后重试（尾逗号/全角引号/未转义换行）。"""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    fixed = text
+    # 尾逗号 ",}" / ",]"
+    fixed = re.sub(r",\s*([}\]])", r"\1", fixed)
+    # 全角引号包裹的键值 -> 半角
+    fixed = fixed.replace("\u201c", '"').replace("\u201d", '"')
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        # 未转义裸换行（字符串值内）：整体把控制换行替换为空格（JSON 结构换行本就可省）
+        fixed2 = fixed.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+        return json.loads(fixed2)   # 仍失败则抛原样错误，由上层重试兜底
 
 
 async def _storyboard_call(idea: str, n_shots: int, llm: dict):
@@ -192,11 +212,11 @@ async def _storyboard_call(idea: str, n_shots: int, llm: dict):
             pass
         raise RuntimeError(f"LLM 返回空 content（思考超长被截断, finish_reason={finish}）: {str(msg)[:200]}")
     start, end = content.find("{"), content.rfind("}") + 1
-    plan = json.loads(content[start:end])
+    plan = _loads_loose(content[start:end])
     shots = plan.get("shots") or []
     if not shots:  # 兼容 LLM 直接输出数组的旧格式
         arr_start, arr_end = content.find("["), content.rfind("]") + 1
-        shots = json.loads(content[arr_start:arr_end])
+        shots = _loads_loose(content[arr_start:arr_end])
     for i, s in enumerate(shots):
         s["shot_id"] = s.get("shot_id") or f"S01_{i+1:02d}"
     chars = plan.get("characters") or []
