@@ -37,8 +37,9 @@
   }
   .main {
     flex: 1; min-width: 0;
-    padding: 26px 28px 60px;
-    max-width: 940px;
+    width: 100%; max-width: 1080px;
+    margin: 0 auto;               /* 在侧栏剩余空间内居中，避免宽屏右侧留白 */
+    padding: 26px 32px 60px;
   }
 
   .brand { padding: 0 8px; }
