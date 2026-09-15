@@ -67,6 +67,86 @@ def init_db():
             )
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_assets_pid ON assets(pid)")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                salt TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                created_at TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                created_at TEXT,
+                expires_at REAL            -- unix 时间戳
+            )
+        """)
+
+
+# ---------------- 用户与会话（登录鉴权） ----------------
+
+def users_exist() -> bool:
+    init_db()
+    with _conn() as c:
+        return bool(c.execute("SELECT 1 FROM users LIMIT 1").fetchone())
+
+
+def create_user(username: str, pw_hash: str, salt: str) -> bool:
+    """创建用户（哈希由 auth.py 计算）。用户名已存在返回 False。"""
+    init_db()
+    with _lock, _conn() as c:
+        try:
+            c.execute(
+                "INSERT INTO users (username, salt, hash, created_at) VALUES (?, ?, ?, ?)",
+                (username, salt, pw_hash, _now()),
+            )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+
+def get_user(username: str) -> dict | None:
+    init_db()
+    with _conn() as c:
+        c.row_factory = sqlite3.Row
+        r = c.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    return dict(r) if r else None
+
+
+def create_session(token: str, username: str, ttl_seconds: int):
+    init_db()
+    now = _time.time()
+    with _lock, _conn() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO sessions (token, username, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (token, username, _now(), now + ttl_seconds),
+        )
+
+
+def session_user(token: str | None) -> str | None:
+    """按 token 查会话，过期/不存在返回 None（顺带惰性清理过期行）。"""
+    if not token:
+        return None
+    init_db()
+    now = _time.time()
+    with _conn() as c:
+        c.row_factory = sqlite3.Row
+        r = c.execute("SELECT username, expires_at FROM sessions WHERE token = ?", (token,)).fetchone()
+        if r and r["expires_at"] > now:
+            return r["username"]
+        if r:
+            c.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+    return None
+
+
+def drop_session(token: str | None):
+    if not token:
+        return
+    init_db()
+    with _lock, _conn() as c:
+        c.execute("DELETE FROM sessions WHERE token = ?", (token,))
 
 
 def _row_to_proj(row) -> dict:
