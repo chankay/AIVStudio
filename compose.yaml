@@ -1,0 +1,21 @@
+services:
+  aiv:
+    build: .
+    container_name: aiv-drama
+    restart: unless-stopped
+    ports:
+      - "8020:8020"
+    environment:
+      # real=真实调用模型后端  mock=本地假数据调试
+      MODE: real
+      # 媒体存储根（不设则默认落在挂载的 data/media 里）
+      # MEDIA_ROOT: /data/media
+    volumes:
+      # 数据库/配置/密钥/媒体 全在这一个目录，挂出来才能持久化
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8020/login', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

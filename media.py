@@ -70,12 +70,28 @@ def gen_name(prefix: str, ext: str) -> str:
 
 
 def url_for(path: str) -> str:
-    """本地路径 -> 前端可访问的 /media/... URL。非存储根下或 mock 伪路径返回空串。"""
-    root = os.path.realpath(media_root())
-    real = os.path.realpath(path) if path else ""
-    if not real.startswith(root + os.sep):
+    """本地路径 -> 前端可访问的 /media/... URL。非存储根下或 mock 伪路径返回空串。
+
+    兼容跨环境数据：库里存的绝对路径可能是「别的环境」写入的（如本机路径搬到容器），
+    这时按 {pid}/{kind}/{filename} 尾部结构在当前存储根下回退匹配。
+    """
+    if not path or str(path).startswith("http"):
         return ""
-    return "/media/" + os.path.relpath(real, root).replace(os.sep, "/")
+    root = os.path.realpath(media_root())
+    real = os.path.realpath(path)
+    if real.startswith(root + os.sep):
+        rel = os.path.relpath(real, root)
+    else:
+        # 回退：取路径尾部 pid/kind/filename 三段，在当前存储根下探测
+        tail = os.path.normpath(str(path)).replace(os.sep, "/").split("/")
+        probe = [seg for seg in tail[-3:] if seg] if len(tail) >= 3 else []
+        if not probe:
+            return ""
+        cand = os.path.join(root, *probe)
+        if not os.path.isfile(cand):
+            return ""
+        rel = os.path.relpath(cand, root)
+    return "/media/" + rel.replace(os.sep, "/")
 
 
 def register(pid: str, kind: str, path: str, meta: dict | None = None):

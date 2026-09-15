@@ -16,13 +16,23 @@
 
 ## 启动
 
+### Docker Compose（推荐）
+
 ```bash
-pip install fastapi uvicorn httpx
+docker compose up -d --build
+# 打开 http://127.0.0.1:8020（compose 里默认 MODE=real，可在 environment 改）
+```
+
+数据库/配置/密钥/媒体全在 `./data` 目录，挂载进容器——升级镜像数据不丢。
+首次访问会进入初始化页面，创建管理员账号（密码至少 6 位），之后登录使用。
+
+### 裸机运行
+
+```bash
+pip install -r requirements.txt
 MODE=real python server.py     # 默认 mock 模式，real 需显式指定
 # 打开 http://127.0.0.1:8020
 ```
-
-首次访问会进入初始化页面，创建管理员账号（密码至少 6 位），之后登录使用。
 
 ## real 模式配置
 
@@ -125,7 +135,7 @@ data/        # 运行数据（已 gitignore，secrets/auth 也在这里）
 - [x] SSE 推送 + 前端模块化
 - [x] 登录鉴权 + 密码可配置
 - [x] 四页路由 + 侧栏布局
+- [x] Docker Compose 部署（数据挂卷持久化，健康检查自带）
 - [ ] 登录防爆破（失败锁定）
 - [ ] 数据库定时备份
 - [ ] 任务完成通知（webhook）
-- [ ] Docker Compose 部署

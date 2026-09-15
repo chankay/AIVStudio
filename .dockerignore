@@ -1,0 +1,12 @@
+# 不进镜像的东西
+data/
+server.log
+*.log
+__pycache__/
+*.pyc
+.git/
+.gitignore
+README.md
+Dockerfile
+compose.yaml
+.dockerignore
