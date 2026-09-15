@@ -549,19 +549,42 @@ def mux_video_audio(video: str, audio: str, out: str):
 
 
 def concat_final(clips: list[str], out: str, pid: str = ""):
-    """多段有声视频按顺序拼接成正片（统一转码后 concat，避免流参数不一致）。"""
+    """多段视频按顺序拼接成正片。
+
+    关键点：统一转码时给没有音轨的片段垫一条静音轨（anullsrc）。
+    否则「无音轨片段 + 有音轨片段」混合 concat 时，输出会以第一个文件的
+    流布局为准，音频流整条丢失——表现为正片完全没声音。
+    """
     if not clips:
         raise RuntimeError("没有可拼接的片段")
+    import subprocess
     tmp_dir = _media_dir(pid, "tmp")
     os.makedirs(tmp_dir, exist_ok=True)
-    # 1) 统一转码（分辨率/帧率/编码一致才能无损 concat）
+    # 1) 统一转码（分辨率/帧率/编码一致才能无损 concat），无音轨的垫静音
     norm = []
     for i, c in enumerate(clips):
         nc = os.path.join(tmp_dir, f"norm_{uuid.uuid4().hex[:6]}.mp4")
-        _run_ffmpeg(["-i", c,
+        has_audio = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a",
+             "-show_entries", "stream=codec_type", "-of", "csv=p=0", c],
+            capture_output=True, text=True).stdout.strip() != ""
+        args = ["-i", c,
+                "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+                "-r", "24", "-c:v", "libx264", "-preset", "fast", "-crf", "20"]
+        if has_audio:
+            args += ["-c:a", "aac", "-ar", "44100", "-ac", "2"]
+        else:
+            # 垫静音轨：第二路输入 anullsrc，时长对齐视频（-shortest 防止静音源无限长）
+            args = (["-i", c,
+                     "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
                      "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
                      "-r", "24", "-c:v", "libx264", "-preset", "fast", "-crf", "20",
-                     "-c:a", "aac", "-ar", "44100", "-ac", "2", nc], timeout=1800)
+                     "-c:a", "aac", "-ar", "44100", "-ac", "2", "-shortest", nc])
+            _run_ffmpeg(args, timeout=1800)
+            norm.append(nc)
+            continue
+        args.append(nc)
+        _run_ffmpeg(args, timeout=1800)
         norm.append(nc)
     # 2) concat list + 拼接
     lst = os.path.join(tmp_dir, f"concat_{uuid.uuid4().hex[:6]}.txt")

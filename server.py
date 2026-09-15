@@ -695,7 +695,8 @@ async def gen_all_tts(pid: str, body: VoiceIn | None = None):
     if pid in _RUNNING:
         return {"msg": "已在运行中"}
     proj = projects[pid]
-    targets = [s for s in proj["shots"] if s.get("video") and os.path.exists(s["video"])]
+    targets = [s for s in proj["shots"] if s.get("video")
+               and media_store.resolve_local(s["video"], pid)]
     if not targets:
         raise HTTPException(400, "还没有成片视频，先跑完视频阶段")
     voice_desc = (body.voice_desc if body else "") or proj.get("voice_desc", "")
@@ -723,8 +724,9 @@ async def _tts_and_mux(pid: str):
 
     clips = []
     for shot in proj["shots"]:
-        video = shot.get("video", "")
-        if not video or not os.path.exists(video):
+        # 跨环境数据：库里存的可能是别的环境写入的路径，回退探测当前存储根
+        video = media_store.resolve_local(shot.get("video", ""), pid)
+        if not video:
             continue
         audio_path = ""
         dialogue = (shot.get("dialogue") or "").strip()

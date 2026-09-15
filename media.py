@@ -69,6 +69,24 @@ def gen_name(prefix: str, ext: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:6]}.{ext.lstrip('.')}"
 
 
+def resolve_local(path: str, pid: str = "") -> str:
+    """库里的路径 -> 当前环境真实可用的本地路径（执行层用，与 url_for 的展示回退同规则）。
+
+    跨环境数据（如本机路径搬到容器）里存的绝对路径在当前环境不存在，
+    按尾部 {pid}/{kind}/{filename} 结构在当前存储根下回退探测；找不到返回空串。
+    """
+    if not path or str(path).startswith("http"):
+        return ""
+    if os.path.exists(path):
+        return path
+    tail = os.path.normpath(str(path)).replace(os.sep, "/").split("/")
+    probe = [seg for seg in tail[-3:] if seg] if len(tail) >= 3 else []
+    if not probe:
+        return ""
+    cand = os.path.join(media_root(), *probe)
+    return cand if os.path.isfile(cand) else ""
+
+
 def url_for(path: str) -> str:
     """本地路径 -> 前端可访问的 /media/... URL。非存储根下或 mock 伪路径返回空串。
 
