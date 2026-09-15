@@ -8,22 +8,27 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar">
-    <div>
+  <!-- 顶栏：品牌 | 导航 | 健康状态 + 退出 -->
+  <header class="topbar">
+    <div class="brand">
       <h1>AI 网剧流水线</h1>
-      <div class="sub" id="modeTag">…</div>
+      <span class="sub" id="modeTag">…</span>
     </div>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+    <nav class="nav">
+      <a href="#/projects" data-page="projects">📋 任务列表</a>
+      <a href="#/new" data-page="new" class="nav-cta">✨ 新建任务</a>
+      <a href="#/settings" data-page="settings">⚙️ 系统配置</a>
+    </nav>
+    <div class="top-actions">
       <div class="health" id="health"></div>
-      <button class="ghost" onclick="logout()">退出登录</button>
+      <button class="ghost" onclick="logout()" title="退出登录">退出 ⎋</button>
     </div>
-  </div>
+  </header>
 
-  <nav class="nav">
-    <a href="#/projects" data-page="projects">📋 任务列表</a>
-    <a href="#/new" data-page="new">✨ 新建任务</a>
-    <a href="#/settings" data-page="settings">⚙️ 系统配置</a>
-  </nav>
+  <!-- 面包屑（详情页显示） -->
+  <div class="crumbs" id="crumbs" style="display:none;">
+    <a href="#/projects">任务列表</a><span class="sep">/</span><span id="crumbTitle"></span>
+  </div>
 
   <!-- 任务列表页 -->
   <section id="page-projects">

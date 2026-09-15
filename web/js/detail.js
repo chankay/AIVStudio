@@ -26,6 +26,10 @@ async function refreshDetail(pid) {
   lastDetailSnap[pid] = sig;
   box.dataset.pid = pid;
 
+  // 面包屑回填剧名
+  const ct = document.getElementById('crumbTitle');
+  if (ct) ct.textContent = p.title;
+
   // 收集现有媒体节点，重绘后原样移回（播放进度、缓冲都保留）
   const keeps = {};
   box.querySelectorAll('.shot').forEach(el => {

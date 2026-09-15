@@ -1,12 +1,5 @@
 // router.js — hash 路由：#/projects | #/new | #/project/{pid} | #/settings
 const PAGES = ['projects', 'new', 'project', 'settings'];
-let __pageInit = {};   // 页面首次进入标记，onEnter 只跑一次
-
-const NAV_ITEMS = [
-  { hash: '#/projects', page: 'projects', icon: '📋', label: '任务列表' },
-  { hash: '#/new', page: 'new', icon: '✨', label: '新建任务' },
-  { hash: '#/settings', page: 'settings', icon: '⚙️', label: '系统配置' },
-];
 
 function currentRoute() {
   const h = location.hash || '#/projects';
@@ -18,13 +11,26 @@ function nav(page, arg) {
   location.hash = arg ? `#/${page}/${arg}` : `#/${page}`;
 }
 
+// 详情页归属「任务列表」高亮
+function navKeyFor(page) {
+  return page === 'project' ? 'projects' : page;
+}
+
 async function renderRoute() {
   const { page, arg } = currentRoute();
   const active = PAGES.includes(page) ? page : 'projects';
 
-  // 高亮导航
+  // 高亮导航（详情页高亮「任务列表」）
+  const key = navKeyFor(active);
   document.querySelectorAll('.nav a').forEach(a =>
-    a.classList.toggle('on', a.dataset.page === active));
+    a.classList.toggle('on', a.dataset.page === key));
+
+  // 面包屑：仅详情页显示，标题由 detail.js 回填
+  const crumbs = document.getElementById('crumbs');
+  if (crumbs) {
+    crumbs.style.display = active === 'project' ? '' : 'none';
+    if (active !== 'project') document.getElementById('crumbTitle').textContent = '';
+  }
 
   // 切显隐
   PAGES.forEach(p => {
