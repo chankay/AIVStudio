@@ -1,7 +1,8 @@
 """LLM / 文生图 / 图生图 / 图生视频 / TTS provider：mock 与 real 双实现。
 
 real 模式对接：
-- 剧本分镜: GLM-5.3-Flash (OpenAI 兼容 chat completions)
+- 剧本分镜: Doubao-Seed-2.1-pro（火山方舟定制分支；OpenAI 兼容 chat completions，
+  原生 VLM——支持 image_url 视觉输入，用于多模态分镜与失败自检）
 - 文生图:   Qwen-Image-2512 (vLLM-Omni /v1/images/generations 风格)
 - 图生图:   Qwen-Image-Edit-2511 (POST /v1/images/edits，multipart，角色一致性)
 - 图生视频: Wan2.2-I2V-A14B (vLLM-Omni POST /v1/videos 异步任务 + 轮询)
@@ -72,6 +73,82 @@ def get_cfg(group: str) -> dict:
 
 def all_cfg() -> dict:
     return _load_cfg()
+
+
+# ---------- VLM 基础层：火山 Seed 系列的视觉输入（火山引擎定制版） ----------
+
+def _image_data_url(path: str, mime: str = "image/png") -> str:
+    """本地图片 -> base64 data URL（OpenAI 兼容 vision 接口的本地文件传法）。"""
+    with open(path, "rb") as f:
+        return f"data:{mime};base64,{base64.b64encode(f.read()).decode()}"
+
+
+async def vlm_chat(prompt: str, image_paths: list[str] | None = None,
+                   max_tokens: int = 4096, temperature: float = 0.3) -> str:
+    """调用分镜 LLM（Seed-2.1-pro / Seed-Evolving，原生 VLM）。
+
+    prompt 为纯文本；image_paths 非空时以 image_url(base64 data URL) 附加视觉输入。
+    返回 content 文本；调用失败抛 RuntimeError（由调用方决定降级策略）。
+    """
+    llm = get_cfg("llm")
+    if not llm.get("key") or not llm.get("url"):
+        raise RuntimeError("LLM 未配置，VLM 诊断不可用")
+    user_content: list = [{"type": "text", "text": prompt}]
+    for p in (image_paths or []):
+        if p and os.path.exists(p):
+            user_content.append({"type": "image_url",
+                                 "image_url": {"url": _image_data_url(p)}})
+    async with httpx.AsyncClient(trust_env=False, timeout=180) as client:
+        r = await client.post(
+            f"{llm['url']}/chat/completions",
+            headers={"Authorization": f"Bearer {llm['key']}"},
+            json={
+                "model": llm["model"],
+                "messages": [{"role": "user", "content": user_content}],
+                # 诊断类任务要结论不要长思考；思考+正文共享额度，给足但收敛
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            },
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f"VLM HTTP {r.status_code}: {(r.text or '')[:200]}")
+        content = (r.json()["choices"][0]["message"] or {}).get("content") or ""
+    if not content.strip():
+        raise RuntimeError("VLM 返回空 content")
+    return content.strip()
+
+
+DIAGNOSE_PROMPT = (
+    "你是 AI 视频生成流水线的运维诊断专家。流水线环节：LLM分镜 → 角色定妆(文生图) → "
+    "首帧(参考图生图) → 图生视频(I2V) → TTS配音 → ffmpeg合成。\n"
+    "下面给出失败环节的报错信息与镜头上下文（可能附有相关截图）。请输出 JSON（不要其他文字）：\n"
+    '{{"cause": "一句话人话版失败原因", "category": "配置|网络|参数|资源|服务端|未知", '
+    '"retryable": true/false, "advice": "给操作者的下一步建议，一句话"}}\n'
+    "判断要点：HTTP 4xx 多为参数/配置问题；连接超时/拒绝多为网络或服务未启动；"
+    "任务 failed 且报错含模型名词多为服务端或资源问题；OOM/显存类归资源。"
+)
+
+
+async def diagnose_failure(stage: str, error_text: str,
+                           shot: dict | None = None, image_paths: list[str] | None = None) -> dict:
+    """生成失败时的 VLM 自动诊断。返回 {cause, category, retryable, advice}；
+    任何异常都返回兜底结果，绝不阻塞主流程。"""
+    fallback = {"cause": error_text[:150], "category": "未知",
+                "retryable": True, "advice": "查看日志原始报错，可先重试一次"}
+    try:
+        ctx = f"失败环节：{stage}\n报错：{error_text[:800]}"
+        if shot:
+            ctx += (f"\n镜头：{shot.get('shot_id', '')} 描述：{(shot.get('description') or '')[:100]}"
+                    f" 运镜：{shot.get('camera', '')} 时长：{shot.get('duration', '')}s")
+        content = await vlm_chat(DIAGNOSE_PROMPT.format() + "\n\n" + ctx,
+                                 image_paths=image_paths, max_tokens=1024, temperature=0.1)
+        start, end = content.find("{"), content.rfind("}") + 1
+        if start >= 0 and end > start:
+            diag = _loads_loose(content[start:end])
+            return {k: diag.get(k) or fallback[k] for k in fallback}
+    except Exception:
+        pass
+    return fallback
 
 
 def save_cfg(data: dict):
@@ -145,22 +222,42 @@ SHOT_TEMPLATE_PROMPT = (
     "出场角色必须从 characters 里选。"
 )
 
+# 多模态分镜：附带参考图时的补充指令（火山引擎定制版，发挥 Seed-2.1-pro 视觉理解）
+SHOT_VISION_PROMPT = (
+    "\n\n本次附有参考图片（按顺序编号）。请先仔细看图再分镜：\n"
+    "- 若是角色参考图：角色的外貌描述必须与图中形象严格一致（发型/发色/服装/配饰），"
+    "appearance 字段写成「图中可见的确定性描述」，禁止凭空想象与图冲突的特征\n"
+    "- 若是场景/画风参考图：镜头的 environment、光线、色调描述向参考图对齐\n"
+    "- description 用画面语言描述「图中这类形象在这个场景里做什么」，可直接引用图中细节"
+    "（道具、纹样、材质），让下游生图环节有据可依"
+)
+
 
 # ---------- 剧本 -> 分镜 + 角色档案 ----------
 
-async def gen_storyboard(idea: str, n_shots: int) -> dict:
-    """返回 {"characters": [...], "shots": [...]}。"""
+async def gen_storyboard(idea: str, n_shots: int, ref_images: list[str] | None = None) -> dict:
+    """返回 {"characters": [...], "shots": [...]}。
+
+    ref_images 非空时走多模态分镜（火山引擎定制版）：Seed-2.1-pro 视觉理解看图写镜头，
+    角色外观与场景细节严格对齐参考图。图片读取失败自动降级为纯文本分镜。
+    """
     llm = get_cfg("llm")
+    refs = [p for p in (ref_images or []) if p and os.path.exists(p)] if MODE == "real" else []
     if MODE == "real" and llm["key"]:
-        return await _storyboard_real(idea, n_shots, llm)
+        try:
+            return await _storyboard_real(idea, n_shots, llm, refs)
+        except RuntimeError:
+            if refs:
+                raise   # 用户明确给了参考图，分镜失败要暴露而不是悄悄降级
+            raise
     return await _storyboard_mock(idea, n_shots)
 
 
-async def _storyboard_real(idea: str, n_shots: int, llm: dict):
+async def _storyboard_real(idea: str, n_shots: int, llm: dict, ref_images: list[str] | None = None):
     last_err: Exception | None = None
     for attempt in range(3):
         try:
-            return await _storyboard_call(idea, n_shots, llm)
+            return await _storyboard_call(idea, n_shots, llm, ref_images)
         except (RuntimeError, json.JSONDecodeError, ValueError) as e:
             last_err = e   # 思考超长（content 空）或 JSON 格式瑕疵均为偶发，自动重试
     raise RuntimeError(f"分镜生成连续 {3} 次失败: {last_err}")
@@ -185,7 +282,18 @@ def _loads_loose(text: str):
         return json.loads(fixed2)   # 仍失败则抛原样错误，由上层重试兜底
 
 
-async def _storyboard_call(idea: str, n_shots: int, llm: dict):
+async def _storyboard_call(idea: str, n_shots: int, llm: dict, ref_images: list[str] | None = None):
+    refs = [p for p in (ref_images or []) if p and os.path.exists(p)]
+    if refs:
+        # 多模态分镜：文本 + image_url(base64) 混合 content（Seed 系列原生支持）
+        user_content: list = [{"type": "text", "text": idea}]
+        for p in refs:
+            user_content.append({"type": "image_url",
+                                 "image_url": {"url": _image_data_url(p)}})
+        system = SHOT_TEMPLATE_PROMPT.format(n=n_shots) + SHOT_VISION_PROMPT
+    else:
+        user_content = idea
+        system = SHOT_TEMPLATE_PROMPT.format(n=n_shots)
     async with httpx.AsyncClient(trust_env=False, timeout=300) as client:
         r = await client.post(
             f"{llm['url']}/chat/completions",
@@ -193,8 +301,8 @@ async def _storyboard_call(idea: str, n_shots: int, llm: dict):
             json={
                 "model": llm["model"],
                 "messages": [
-                    {"role": "system", "content": SHOT_TEMPLATE_PROMPT.format(n=n_shots)},
-                    {"role": "user", "content": idea},
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_content},
                 ],
                 "temperature": 0.8,
                 # 思考型模型：思考 + 正文共享 max_tokens，分镜 JSON 较长，余量必须给足

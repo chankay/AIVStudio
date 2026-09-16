@@ -53,6 +53,11 @@
           <div style="flex:1;"><label>镜头数</label><input id="nshots" type="number" value="6" min="3" max="12"></div>
           <div style="flex:2;"><label>画风</label><input id="style" value="写实电影感"></div>
         </div>
+        <label>分镜参考图（可选，火山定制版·多模态分镜）</label>
+        <input id="refFiles" type="file" accept="image/*" multiple style="font-size:13px;">
+        <div style="font-size:12px;color:var(--txt-3);margin-top:-6px;">
+          传角色设定图或场景图，Seed-2.1-pro 会看着图写分镜——镜头描述与图中形象/场景严格对齐。最多 5 张。
+        </div>
         <button id="btnCreate" onclick="createAndRun()">生成分镜并开跑</button>
         <span id="createMsg" style="font-size:12px;color:var(--txt-3);margin-left:10px;"></span>
       </div>

@@ -18,6 +18,17 @@ async function api(path, opts) {
   return r.json();
 }
 
+async function apiForm(path, formData) {
+  // multipart 上传（如分镜参考图）：不能带 Content-Type，浏览器自动生成 boundary
+  const r = await fetch(path, {method: 'POST', body: formData});
+  if (r.status === 401) {
+    location.href = '/login?next=' + encodeURIComponent(location.pathname + location.hash);
+    throw new Error('未登录');
+  }
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
 async function logout() {
   try { await api('/api/auth/logout', {method:'POST'}); } catch {}
   location.href = '/login';

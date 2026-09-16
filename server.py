@@ -9,7 +9,7 @@ import os
 import time
 import uuid
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -233,6 +233,47 @@ async def create_project(p: ProjectIn):
     }
     _save_projects(projects)
     return projects[pid]
+
+
+@app.post("/api/projects/{pid}/storyboard_refs")
+async def upload_storyboard_refs(pid: str, files: list[UploadFile] = File(...)):
+    """上传分镜参考图（火山引擎定制版·多模态分镜）：Seed-2.1-pro 视觉理解看图写镜头。
+
+    图片落盘到项目 refs/ 目录，路径记进项目 storyboard_refs 字段，下次分镜/重新分镜生效。
+    """
+    projects = _load_projects()
+    if pid not in projects:
+        raise HTTPException(404)
+    proj = projects[pid]
+    if pid in _RUNNING:
+        raise HTTPException(409, "项目运行中，稍后再传")
+    ref_dir = os.path.join(media_store.project_media_dir(pid), "refs")
+    os.makedirs(ref_dir, exist_ok=True)
+    saved = []
+    for f in files[:5]:   # 上限 5 张，控制 token 消耗
+        if not (f.content_type or "").startswith("image/"):
+            continue
+        ext = os.path.splitext(f.filename or "")[1].lower() or ".png"
+        path = os.path.join(ref_dir, f"ref_{uuid.uuid4().hex[:6]}{ext}")
+        with open(path, "wb") as out:
+            out.write(await f.read())
+        saved.append(path)
+    if not saved:
+        raise HTTPException(400, "没有有效的图片文件")
+    proj["storyboard_refs"] = saved
+    _save_one(proj)
+    return {"msg": f"已保存 {len(saved)} 张参考图，下次分镜生效", "refs": saved}
+
+
+@app.delete("/api/projects/{pid}/storyboard_refs")
+async def clear_storyboard_refs(pid: str):
+    """清空分镜参考图（退回纯文本分镜）。"""
+    projects = _load_projects()
+    if pid not in projects:
+        raise HTTPException(404)
+    projects[pid]["storyboard_refs"] = []
+    _save_one(projects[pid])
+    return {"msg": "参考图已清空"}
 
 
 @app.delete("/api/projects/{pid}")
@@ -800,7 +841,11 @@ async def _pipeline(pid: str, stage: str = "all", tid: str = ""):
         if tid:
             _task_progress(tid, phase="storyboard")
         try:
-            plan = await providers.gen_storyboard(proj["idea"], proj["n_shots"])
+            # 火山引擎定制版：多模态分镜——把项目自带的参考图（如有）喂给 Seed-2.1-pro 视觉理解
+            ref_images = [p for p in (proj.get("storyboard_refs") or [])]
+            plan = await providers.gen_storyboard(proj["idea"], proj["n_shots"], ref_images)
+            if ref_images:
+                proj["log"].append(f"[{time.strftime('%H:%M:%S')}] 多模态分镜：参考 {len(ref_images)} 张图（Seed-2.1-pro 视觉理解）")
             for s in plan["shots"]:
                 s.update({"frame": "", "video": "", "video_status": "pending", "attempts": 0})
             proj["shots"] = plan["shots"]
@@ -1053,6 +1098,7 @@ async def _produce_video(proj: dict, shot: dict):
             result = await providers.gen_video(shot, frame, attempt, on_progress=_report, pid=proj["id"])
         except Exception as e:
             result = {"video": "", "ok": False}
+            shot["last_error"] = str(e)[:300]   # 留给失败自检诊断用
             proj["log"].append(f"[{time.strftime('%H:%M:%S')}] {shot['shot_id']} 第{attempt}次抽卡异常: {str(e)[:150]}")
         shot["video_elapsed"] = round(time.time() - t1)  # 本次视频生成耗时
         if result["ok"]:
@@ -1068,6 +1114,27 @@ async def _produce_video(proj: dict, shot: dict):
     else:
         shot["video_status"] = "failed"
         shot["elapsed"] = round(time.time() - shot["started_at"])
+        await _diagnose_and_log(proj, "视频生成(I2V)", shot,
+                                shot.pop("last_error", "") or "连续 3 次抽卡失败（未返回成片）",
+                                image_paths=[frame] if frame and os.path.exists(frame) else [])
+    _save_one(proj)
+
+
+async def _diagnose_and_log(proj: dict, stage: str, shot: dict | None,
+                            error_text: str, image_paths: list[str] | None = None):
+    """火山引擎定制版：失败自检——Seed-2.1-pro 视觉诊断，人话版原因+建议写进项目日志。
+
+    诊断本身失败绝不阻塞主流程（providers.diagnose_failure 内部已兜底）。
+    """
+    try:
+        diag = await providers.diagnose_failure(stage, error_text, shot, image_paths)
+        tag = "✅可重试" if diag.get("retryable") else "⛔疑似需改配置/参数"
+        proj["log"].append(
+            f"[{time.strftime('%H:%M:%S')}] [{stage} 自检-{diag.get('category', '未知')}] {tag} "
+            f"原因：{diag.get('cause', '')} ｜ 建议：{diag.get('advice', '')}"
+        )
+    except Exception as e:
+        proj["log"].append(f"[{time.strftime('%H:%M:%S')}] [{stage} 自检不可用] {str(e)[:100]}")
     _save_one(proj)
 
 
